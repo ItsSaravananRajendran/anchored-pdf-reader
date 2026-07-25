@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <title>PDF Reader + Anchored AI Chat</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- LEFT: PDF reader -->
+    <section class="reader">
+      <header class="reader-bar">
+        <div class="reader-bar-left">
+          <button id="newSessionBtn" class="btn ghost" title="New session (Ctrl+Shift+N)">
+            <span class="kbd">↻</span> New session
+          </button>
+          <span id="pdfTitle" class="title muted">no pdf loaded</span>
+        </div>
+        <div class="reader-bar-right">
+          <select id="zoomSelect" class="zoom-select" title="Zoom level">
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1.0" selected>100%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5">150%</option>
+            <option value="2.0">200%</option>
+            <option value="fit-width">Fit width</option>
+          </select>
+          <input id="pageJump" type="number" min="1" class="page-jump"
+                 placeholder="#" title="Type a page number and press Enter" />
+          <span id="pageIndicator" class="muted">— / —</span>
+          <button id="prevPage" class="btn icon">‹</button>
+          <button id="nextPage" class="btn icon">›</button>
+        </div>
+      </header>
+
+      <div id="urlBar" class="url-bar">
+        <details id="libraryDropdown" class="library-dropdown">
+          <summary class="btn ghost" title="Library">📚 <span id="libraryCount" class="muted small">—</span></summary>
+          <div id="libraryList" class="library-list"></div>
+        </details>
+        <input id="urlInput" type="url"
+               placeholder="Paste a PDF URL (http/https) and press Enter"
+               autocomplete="off" />
+        <button id="loadBtn" class="btn primary">Load</button>
+        <span id="loadStatus" class="muted"></span>
+      </div>
+
+      <div id="pdfScroll" class="pdf-scroll" tabindex="0">
+        <div id="pdfCanvasWrap" class="pdf-canvas-wrap">
+          <canvas id="pdfCanvas"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Divider for resizing the chat panel -->
+    <div id="panelDivider" class="panel-divider" title="Drag to resize"></div>
+
+    <!-- RIGHT: Chat -->
+    <aside class="chat">
+      <header class="chat-bar">
+        <span class="title">Anchored chat</span>
+        <span id="sessionLabel" class="muted"></span>
+      </header>
+
+      <details id="anchorsListWrap" class="anchors-list-wrap" open>
+        <summary>
+          <span class="title">Anchors in this book</span>
+          <span id="anchorsCount" class="muted small">(0)</span>
+        </summary>
+        <div id="anchorsList" class="anchors-list"></div>
+      </details>
+
+      <div id="messages" class="messages"></div>
+
+      <div class="composer">
+        <div id="pendingChip" class="pending-chip hidden">
+          <img id="pendingThumb" alt="" />
+          <span id="pendingLabel">p. —</span>
+          <button id="clearChip" class="chip-x" title="Clear anchor">×</button>
+        </div>
+        <textarea id="composerInput" rows="2"
+                  placeholder="Draw a rectangle on the page, then ask…"
+                  disabled></textarea>
+        <div class="composer-actions">
+          <span id="hint" class="muted small">Drag on the page to set an anchor.</span>
+          <button id="sendBtn" class="btn primary" disabled>Send</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs" type="module"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/marked@13.0.3/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
