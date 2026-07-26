@@ -106,7 +106,7 @@ function Shell() {
                     <EmptyState onLoadClick={() => document.getElementById("urlInput")?.focus()} />
                 )}
                 {pdfInfo && (
-                    <div className="reader-chat-grid">
+                    <div className="reader-chat-grid" style={{ gridTemplateColumns: `1fr 6px ${chatWidth}px` }}>
                         <Reader
                             pdfInfo={pdfInfo} pdfDoc={loader.pdfDoc} scale={scale}
                             scrollContainerRef={scrollContainerRef}

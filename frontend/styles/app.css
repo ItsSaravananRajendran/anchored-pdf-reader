@@ -163,7 +163,7 @@ body {
 
 .reader-chat-grid {
     display: grid;
-    grid-template-columns: 1fr var(--divider-w) var(--chat-w);
+    /* grid-template-columns is set inline via React so chat width is reactive */
     height: 100%;
     min-height: 0;
 }
@@ -197,6 +197,14 @@ body {
     box-shadow: var(--shadow-md);
     border-radius: var(--radius-sm);
     overflow: hidden;
+    /* Reserve enough space for an A4 page at the current zoom so the scroll
+       container has the right scrollHeight even before a page renders. The
+       JS sets --wrap-h to the actual page height in pixels; this fallback
+       keeps the wrap from collapsing to its content height (often 0) while
+       a page is still in the render queue. */
+    min-height: calc(var(--wrap-h, 1056px) + 8px);
+    margin: 4px auto;
+    width: var(--wrap-w, 612px);
 }
 .pdf-page-canvas { display: block; }
 .pdf-page-overlay {
@@ -207,10 +215,19 @@ body {
 /* ---- Panel divider ---- */
 
 .panel-divider {
-    width: var(--divider-w);
+    width: 6px;
     background: var(--border-subtle);
     cursor: col-resize;
     transition: background var(--t-fast) var(--ease);
+    /* Generous hit area: the visible bar is 6px but the click target is
+       14px so it's easy to grab without hitting adjacent pixels. */
+    position: relative;
+}
+.panel-divider::before {
+    content: '';
+    position: absolute;
+    inset: 0 -4px;
+    background: transparent;
 }
 .panel-divider:hover { background: var(--accent); }
 body.is-resizing { cursor: col-resize !important; user-select: none; }
@@ -273,9 +290,37 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
 .anchor-row:hover { background: var(--accent-soft); }
 .anchor-thumb {
     position: relative;
+    width: 32px;
+    height: 32px;
     border: 1px solid var(--border-default);
-    border-radius: 2px;
-    background: var(--bg-elev-2);
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(to bottom right,
+            transparent 0%, transparent 100%);
+    background-color: var(--bg-elev-2);
+    overflow: hidden;
+}
+/* Show the rect as a highlighted region inside a tiny page preview */
+.anchor-thumb::before {
+    content: '';
+    position: absolute;
+    /* The chip JS already sets left/top/width/height as % of the wrap */
+    inset: 0;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 1px;
+}
+.anchor-thumb::after {
+    /* Faint page-like background to suggest the page under the chip */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(to bottom,
+            rgba(255,255,255,0.0) 0%,
+            rgba(255,255,255,0.0) 80%,
+            rgba(255,255,255,0.5) 100%);
+    pointer-events: none;
 }
 .anchor-row .page-badge {
     background: var(--bg-elev-2);
