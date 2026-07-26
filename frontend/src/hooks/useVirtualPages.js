@@ -39,13 +39,6 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
     const pdfDocRef = useRef(pdfDoc);
     pdfDocRef.current = pdfDoc;
 
-    function setPageEntry(pageNum, patch) {
-        setPages((prev) => ({
-            ...prev,
-            [pageNum]: { ...(prev[pageNum] || {}), ...patch },
-        }));
-    }
-
     function pagesInViewport() {
         const scroll = scrollContainerRef?.current;
         // No scroll container (single-page mode, or container not mounted yet):
@@ -87,6 +80,43 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         _queue.push({ pageNum, canvas, overlay });
         setPageEntry(pageNum, { rendering: true });
         _drain();
+    }
+
+    // setPageEntry — records a page's wrap/canvas/overlay refs into the pages
+    // map AND schedules a render retry for that page. Why we need the retry:
+    // PageCanvas's mount effect calls setPageEntry(27) and then queueMicrotask
+    // scheduleRender(27). The microtask fires before setPageEntry's commit, so
+    // pagesRef.current[27] is still undefined and scheduleRender bails. The
+    // [pdfDoc] effect's re-render loop is keyed on pdfDoc and only fires when
+    // pdfDoc changes (initial load). For page changes triggered by anchor
+    // clicks, pdfDoc doesn't change — so nobody retries. This deferred retry
+    // is what closes that gap.
+    function setPageEntry(pageNum, patch) {
+        // Mutate pagesRef.current SYNCHRONOUSLY so the very next
+        // scheduleRender call sees the new entry. setPages is called
+        // separately to keep React's view in sync (soft-reset effect,
+        // rendered set, etc. all read from React state).
+        //
+        // IMPORTANT: when a new canvas/overlay is registered (e.g. on
+        // PageCanvas remount after a page change), we must invalidate the
+        // `rendered` and `renderedAt` flags. Otherwise scheduleRender bails
+        // on the early-return `if (entry.rendered && entry.renderedAt ===
+        // scaleRef.current) return;` and the new canvas never gets drawn.
+        const prev = pagesRef.current;
+        const existing = prev[pageNum] || {};
+        const hasNewCanvas = patch && (patch.canvas || patch.overlay || patch.wrap);
+        const invalidated = hasNewCanvas
+            ? { rendered: false, renderedAt: null, rendering: false }
+            : {};
+        const next = {
+            ...prev,
+            [pageNum]: { ...existing, ...invalidated, ...patch },
+        };
+        pagesRef.current = next;
+        setPages(next);
+        if (patch && patch.canvas && patch.overlay) {
+            scheduleRender(pageNum, patch.canvas, patch.overlay);
+        }
     }
 
     // Schedule an eviction to happen microtask-from-now. Multiple renders
