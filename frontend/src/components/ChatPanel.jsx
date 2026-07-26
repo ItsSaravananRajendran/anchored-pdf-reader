@@ -3,9 +3,15 @@
  *
  * Composer is disabled until a pending anchor is set (handled by parent).
  * Auto-scrolls to bottom on new messages unless user has scrolled up.
+ *
+ * The anchors section is a collapsible disclosure: a <button> header with
+ * aria-expanded toggles a height-transition wrapper around <AnchorsList>.
+ * The list is keyed on pdfHash so it remounts (and resets to expanded) on
+ * PDF change — the local useState for the expanded/collapsed flag would
+ * otherwise survive across documents.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import MessageBubble from "./MessageBubble";
 import AnchorsList from "./AnchorsList";
 
@@ -28,6 +34,7 @@ export default function ChatPanel({
     anchors,
     messages,
     pendingAnchor,
+    pdfHash,
     onAnchorClick,
     onAnchorDelete,
     onSend,
@@ -36,8 +43,44 @@ export default function ChatPanel({
     sessionLabel,
 }) {
     const [text, setText] = useState("");
+    const [expanded, setExpanded] = useState(true);
     const messagesRef = useRef(null);
     const [pinnedToBottom, setPinnedToBottom] = useState(true);
+
+    // The grouped row in AnchorsList only carries userMessageId/sessionId/etc.
+    // The original onClick / onDelete handlers expect the raw book-anchor
+    // (with message_id, role, etc.) so we look the user message back up by id
+    // before forwarding. This keeps AnchorChip + AnchorsList generic and
+    // avoids changing the existing handler signatures.
+    const anchorByMessageId = useMemo(() => {
+        const m = new Map();
+        for (const a of anchors || []) m.set(a.message_id, a);
+        return m;
+    }, [anchors]);
+
+    const handleAnchorClick = useCallback(
+        (row) => {
+            if (!onAnchorClick) return;
+            const userAnchor = anchorByMessageId.get(row.userMessageId);
+            // No fallback to the grouped row: it carries camelCase fields
+            // (userMessageId, anchorPage, ...) that the downstream handler
+            // doesn't understand. If the user message vanished from
+            // bookAnchors (e.g. just deleted), the click is a no-op.
+            if (!userAnchor) return;
+            onAnchorClick(userAnchor);
+        },
+        [onAnchorClick, anchorByMessageId],
+    );
+
+    const handleAnchorDelete = useCallback(
+        (row) => {
+            if (!onAnchorDelete) return;
+            const userAnchor = anchorByMessageId.get(row.userMessageId);
+            if (!userAnchor) return;
+            onAnchorDelete(userAnchor);
+        },
+        [onAnchorDelete, anchorByMessageId],
+    );
 
     // Auto-scroll on new content when user is pinned to bottom
     useEffect(() => {
@@ -60,6 +103,13 @@ export default function ChatPanel({
         setText("");
     }
 
+    const headerId = `anchors-header-${pdfHash || "none"}`;
+    const listId = `anchors-list-${pdfHash || "none"}`;
+    const count = (anchors || []).length;
+    // Reserve a fixed height when expanded; the inner <ul> scrolls.
+    // 0 when collapsed; the transition handles the animation.
+    const collapseMaxHeight = expanded ? 280 : 0;
+
     return (
         <aside className="chat-panel">
             <header className="chat-header">
@@ -75,9 +125,36 @@ export default function ChatPanel({
                 </span>
             </header>
 
-            <section className="anchors-section" aria-label="Anchors in this book">
-                <h3 className="anchors-title">Anchors in this book ({anchors.length})</h3>
-                <AnchorsList anchors={anchors} onClick={onAnchorClick} onDelete={onAnchorDelete} />
+            <section className="anchors-section" aria-labelledby={headerId}>
+                <button
+                    type="button"
+                    id={headerId}
+                    className="anchors-toggle"
+                    aria-expanded={expanded}
+                    aria-controls={listId}
+                    onClick={() => setExpanded((v) => !v)}
+                >
+                    <span className="anchors-toggle-label">
+                        Anchors in this book ({count})
+                    </span>
+                    <span className="anchors-toggle-chevron" aria-hidden="true">
+                        {expanded ? "▾" : "▸"}
+                    </span>
+                </button>
+                <div
+                    className="anchors-collapse"
+                    id={listId}
+                    role="region"
+                    aria-hidden={!expanded}
+                    style={{ maxHeight: collapseMaxHeight }}
+                >
+                    <AnchorsList
+                        key={pdfHash || "none"}
+                        anchors={anchors}
+                        onClick={handleAnchorClick}
+                        onDelete={handleAnchorDelete}
+                    />
+                </div>
             </section>
 
             <section className="messages-section" ref={messagesRef} onScroll={onScroll}>

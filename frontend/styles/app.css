@@ -282,16 +282,52 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
 .anchors-section {
     border-bottom: 1px solid var(--border-subtle);
     padding: var(--sp-2) 0;
-    max-height: 240px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
-.anchors-title {
+
+/* Collapsible header — replaces the static .anchors-title. The whole row
+ * is the button so the click target is generous. */
+.anchors-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--fg-tertiary);
     font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--fg-tertiary);
-    margin: 0 var(--sp-4) var(--sp-2);
+    font-family: inherit;
+    padding: var(--sp-2) var(--sp-4);
+    cursor: pointer;
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
+.anchors-toggle:hover { color: var(--fg); background: var(--bg-elev-2); }
+.anchors-toggle:focus { outline: none; color: var(--fg); }
+.anchors-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.anchors-toggle-label { font-weight: 600; }
+.anchors-toggle-chevron {
+    font-size: var(--fs-sm);
+    line-height: 1;
+    color: var(--fg-tertiary);
+    transition: transform var(--t-fast) var(--ease);
+}
+.anchors-toggle[aria-expanded="false"] .anchors-toggle-chevron {
+    transform: rotate(-90deg);
+}
+
+/* Height-transition wrapper for the collapse animation. The list scrolls
+ * inside its 280px cap; when collapsed, max-height goes to 0 and overflow
+ * is hidden so the content doesn't bleed out. */
+.anchors-collapse {
+    overflow: hidden;
+    transition: max-height 180ms ease;
+    max-height: 280px;  /* default; JSX sets the inline override on toggle */
+}
+.anchors-collapse[aria-hidden="true"] { max-height: 0; }
+
 .anchors-list { display: flex; flex-direction: column; gap: 1px; }
 .anchors-empty {
     padding: var(--sp-3) var(--sp-4);
@@ -301,49 +337,19 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
 
 .anchor-row {
     display: grid;
-    grid-template-columns: 32px 1fr auto;
-    align-items: center;
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
     gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-4);
     cursor: pointer;
     transition: background var(--t-fast) var(--ease);
     font-size: var(--fs-sm);
+    list-style: none;
 }
 .anchor-row:hover { background: var(--accent-soft); }
-.anchor-thumb {
-    position: relative;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background:
-        linear-gradient(to bottom right,
-            transparent 0%, transparent 100%);
-    background-color: var(--bg-elev-2);
-    overflow: hidden;
-}
-/* Show the rect as a highlighted region inside a tiny page preview */
-.anchor-thumb::before {
-    content: '';
-    position: absolute;
-    /* The chip JS already sets left/top/width/height as % of the wrap */
-    inset: 0;
-    background: var(--accent-soft);
-    border: 1px solid var(--accent);
-    border-radius: 1px;
-}
-.anchor-thumb::after {
-    /* Faint page-like background to suggest the page under the chip */
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        linear-gradient(to bottom,
-            rgba(255,255,255,0.0) 0%,
-            rgba(255,255,255,0.0) 80%,
-            rgba(255,255,255,0.5) 100%);
-    pointer-events: none;
-}
+.anchor-row:focus { outline: none; background: var(--accent-soft); }
+.anchor-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 .anchor-row .page-badge {
     background: var(--bg-elev-2);
     color: var(--fg-secondary);
@@ -353,13 +359,18 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
     font-family: var(--font-mono);
     text-align: center;
     min-width: 32px;
+    align-self: center;  /* badge stays vertically centered, text wraps below */
 }
 .anchor-text {
-    color: var(--fg-secondary);
-    font-size: var(--fs-xs);
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    line-height: 1.4;
+    /* 2-line max with ellipsis on the 3rd line if it overflows */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
 }
 .anchor-delete {
     background: transparent;
@@ -372,9 +383,12 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
     opacity: 0;
     transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
     cursor: pointer;
+    align-self: center;
 }
-.anchor-row.hovered .anchor-delete { opacity: 1; }
+.anchor-row.hovered .anchor-delete,
+.anchor-row:focus-within .anchor-delete { opacity: 1; }
 .anchor-delete:hover { background: var(--danger-soft); color: var(--danger); }
+.anchor-delete:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
 
 /* ---- Messages ---- */
 

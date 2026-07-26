@@ -147,6 +147,7 @@ function Shell() {
                         <PanelDivider getChatWidth={() => chatWidth} setChatWidth={setChatWidth} persistPrefs={() => {}} />
                         <ChatPanel
                             anchors={bookAnchors} messages={messages} pendingAnchor={pendingAnchor}
+                            pdfHash={pdfInfo?.pdf_hash}
                             onAnchorClick={actions.loadSessionForAnchor}
                             onAnchorDelete={actions.deleteAnchor}
                             onSend={sendMessage} onNewSession={actions.newSession}
