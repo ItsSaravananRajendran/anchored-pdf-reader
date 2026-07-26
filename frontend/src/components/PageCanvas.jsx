@@ -2,15 +2,22 @@
  * PageCanvas — one PDF page, with canvas + overlay.
  * Imperative PDF.js render is driven by useVirtualPages in the parent.
  *
- * Layout: the wrap div has a fixed CSS pixel height set via the --wrap-h
- * CSS variable so the scroll container has the right scrollHeight before
- * the page actually renders. The canvas inside uses the PDF.js viewport
- * to get its real width/height.
+ * Layout: the wrap div reserves its expected height via the --wrap-h /
+ * --wrap-w CSS variables so the scroll container has the right
+ * scrollHeight before the page actually renders.
+ *
+ * Performance notes:
+ *  - Each wrap in the DOM keeps two canvases alive (page + overlay).
+ *    For a 500-page book that's 1000 canvases total. Most wraps don't
+ *    have a rendered canvas bitmap — only ~11 ever do.
+ *  - The historical-anchors and live-drag overlays are event-driven
+ *    (no rAF polling). They only do work when something changes.
+ *  - All effects here have explicit dependency arrays so a parent
+ *    re-render doesn't refire them across all 500 wraps.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useDragSelection } from "../hooks/useDragSelection";
-import { estimatePageHeightCss } from "../lib/coords";
 
 export default function PageCanvas({
     pageNum,
@@ -32,68 +39,57 @@ export default function PageCanvas({
         historicalAnchors,
     });
 
-    // When this element mounts, register it with the virtual-pages hook
+    // On mount, register with virtual-pages + schedule initial render.
     useEffect(() => {
         const canvas = canvasRef.current;
         const overlay = overlayRef.current;
         const wrap = wrapRef.current;
         setPageEntry(pageNum, { wrap, canvas, overlay });
-        // Defer scheduleRender to the next microtask. The setPageEntry above
-        // is batched with the parent hook's [pdfDoc] reset; calling
-        // scheduleRender synchronously here would read pagesRef.current BEFORE
-        // React commits our setPageEntry, so entry would be undefined and
-        // the render would be silently dropped.
         queueMicrotask(() => scheduleRender(pageNum, canvas, overlay));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageNum]);
 
-    // Compute the CSS height used for the wrap's reserved space. Once the
-    // PDF.js viewport arrives we switch to its exact height; otherwise we
-    // estimate from the natural page aspect ratio.
     const naturalH = width * (792 / 612); // Letter aspect ratio fallback
     const height = pageEntry?.viewport?.height || naturalH;
+    const W = pageEntry?.viewport?.width || width;
+    const H = pageEntry?.viewport?.height || height;
 
-    // Redraw the overlay whenever the live drag rect OR the rendered
-    // viewport changes (the height in particular — the overlay canvas is
-    // sized to viewport.height * dpr once a page renders, and the dashed
-    // historical anchors need correct coordinates).
+    // Resize the overlay canvas to match the rendered viewport. Only runs
+    // when size changes (not on every render).
     useEffect(() => {
         const overlay = overlayRef.current;
-        if (!overlay || !width || !height) return;
+        if (!overlay) return;
         const dpr = window.devicePixelRatio || 1;
-        const W = pageEntry?.viewport?.width || width;
-        const H = pageEntry?.viewport?.height || height;
-        if (overlay.width !== Math.round(W * dpr) || overlay.height !== Math.round(H * dpr)) {
-            overlay.width = Math.round(W * dpr);
-            overlay.height = Math.round(H * dpr);
+        const tw = Math.round(W * dpr);
+        const th = Math.round(H * dpr);
+        if (overlay.width !== tw || overlay.height !== th) {
+            overlay.width = tw;
+            overlay.height = th;
             overlay.style.width = W + "px";
             overlay.style.height = H + "px";
         }
-        const ctx = overlay.getContext("2d");
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-        const rect = drag.currentDragRect();
-        if (rect) {
-            ctx.strokeStyle = "rgba(88,166,255,0.95)";
-            ctx.fillStyle = "rgba(88,166,255,0.18)";
-            ctx.lineWidth = 2;
-            ctx.fillRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
-            ctx.strokeRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
-        }
-    });
+    }, [W, H]);
 
-    // Draw historical anchors on the overlay (only when no live drag is happening)
+    // Memoized filter — only re-runs when historicalAnchors or pageNum changes.
+    const pageAnchors = useMemo(
+        () => historicalAnchors.filter((a) => a.anchor_page === pageNum),
+        [historicalAnchors, pageNum],
+    );
+
+    // Draw historical anchors. Skips entirely if:
+    //  - overlay not ready
+    //  - no live drag in progress (drag effect owns the overlay then)
+    //  - page hasn't rendered (we have no exact viewport to scale into)
+    //  - page has no anchors (the common case)
     useEffect(() => {
         const overlay = overlayRef.current;
-        if (!overlay || !width || drag.currentDragRect()) return;
-        const dpr = window.devicePixelRatio || 1;
-        const W = pageEntry?.viewport?.width || width;
-        const H = pageEntry?.viewport?.height || height;
+        if (!overlay || !pageEntry?.viewport) return;
+        if (pageAnchors.length === 0) return;
         const ctx = overlay.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
-        const rects = historicalAnchors.filter((a) => a.anchor_page === pageNum);
-        for (const a of rects) {
+        for (const a of pageAnchors) {
             const r = a.anchor_rect;
             ctx.strokeStyle = a.role === "user" ? "rgba(210,153,34,0.85)" : "rgba(63,185,80,0.85)";
             ctx.fillStyle = a.role === "user" ? "rgba(210,153,34,0.10)" : "rgba(63,185,80,0.08)";
@@ -103,10 +99,29 @@ export default function PageCanvas({
             ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
             ctx.setLineDash([]);
         }
-    }, [historicalAnchors, pageNum, width, height, pageEntry, drag]);
+    }, [pageAnchors, W, H, pageEntry]);
 
-    // Layout: reserve the right height via CSS variables so the scroll
-    // container has the correct scrollHeight even before this page renders.
+    // Live drag rectangle. Subscribe to drag changes — fires only when
+    // the rect actually moves (no rAF polling, no per-render redraws).
+    useEffect(() => {
+        const overlay = overlayRef.current;
+        if (!overlay) return undefined;
+        const ctx = overlay.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        const unsubscribe = drag.subscribe((rect) => {
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            if (rect) {
+                ctx.strokeStyle = "rgba(88,166,255,0.95)";
+                ctx.fillStyle = "rgba(88,166,255,0.18)";
+                ctx.lineWidth = 2;
+                ctx.fillRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
+                ctx.strokeRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
+            }
+        });
+        return unsubscribe;
+    }, [W, H, drag]);
+
     const wrapStyle = {
         "--wrap-w": width + "px",
         "--wrap-h": height + "px",

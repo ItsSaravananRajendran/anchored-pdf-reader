@@ -1,22 +1,28 @@
 /**
  * Pointer drag selection on a per-page overlay canvas.
  *
- * Returns handlers (onPointerDown, onPointerMove, onPointerUp) to spread
- * onto the overlay element. Calls `onCommit(rect)` when the user finishes
- * a drag with a rect above the minimum threshold.
+ * Returns:
+ *  - onPointerDown / onPointerMove / onPointerUp: spread onto the overlay element
+ *  - subscribe(cb): callback fired whenever the drag rect changes; pass `null`
+ *    to unsubscribe. Used by PageCanvas to redraw the live-drag overlay
+ *    without polling via rAF.
+ *
+ * Calls `onCommit(rect)` when the user finishes a drag with a rect above the
+ * minimum threshold. Calls `onClick(anchor)` for clicks that hit a historical
+ * anchor rect.
  */
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { clientToNormalized } from "../lib/coords";
-import { normalizeRect, pointInRect, rectsEqual } from "../lib/rect";
+import { normalizeRect, pointInRect } from "../lib/rect";
 
 const MIN_AREA = 0.0005; // normalized area; ignore tiny drags
 
 export function useDragSelection({
     onCommit,
-    onClick, // (rect) => void — click on a historical rect (not a drag)
+    onClick, // (anchor) => void — click on a historical rect
     historicalAnchors = [],
-    threshold = 0.02, // px-normalized; above this, it's a drag
+    threshold = 0.02,
 }) {
     const stateRef = useRef({
         dragging: false,
@@ -24,13 +30,17 @@ export function useDragSelection({
         cur: null,
         clickedAnchor: null,
     });
+    const subRef = useRef(null);
+
+    function _notify(rect) {
+        if (subRef.current) subRef.current(rect);
+    }
 
     function onPointerDown(e) {
-        if (e.button !== 0) return; // left-click only
+        if (e.button !== 0) return;
         const overlay = e.currentTarget;
         const rect = overlay.getBoundingClientRect();
         const p = clientToNormalized(e.clientX, e.clientY, rect);
-        // Hit-test historical anchors first
         const hit = historicalAnchors.find(
             (a) => a.anchor_page === parseInt(overlay.dataset.page, 10)
                 && pointInRect(p.x, p.y, normalizeRect(a.anchor_rect, {
@@ -40,17 +50,14 @@ export function useDragSelection({
         );
         if (hit) {
             stateRef.current = {
-                dragging: false,
-                start: null,
-                cur: null,
-                clickedAnchor: hit,
+                dragging: false, start: null, cur: null, clickedAnchor: hit,
             };
             overlay.setPointerCapture?.(e.pointerId);
             return;
         }
-        // Begin a new draw
         stateRef.current = { dragging: true, start: p, cur: p, clickedAnchor: null };
         overlay.setPointerCapture?.(e.pointerId);
+        _notify(null);
     }
 
     function onPointerMove(e) {
@@ -58,11 +65,12 @@ export function useDragSelection({
         const overlay = e.currentTarget;
         const rect = overlay.getBoundingClientRect();
         const p = clientToNormalized(e.clientX, e.clientY, rect);
-        if (s.clickedAnchor) return; // wait for pointerup
+        if (s.clickedAnchor) return;
         if (s.dragging && s.start) {
-            // Transition from click→drag: only start drawing once we've moved past threshold
             if (!s.cur || Math.abs(p.x - s.start.x) > threshold || Math.abs(p.y - s.start.y) > threshold) {
                 s.cur = p;
+                const r = normalizeRect(s.start, s.cur);
+                _notify(r);
             }
         }
     }
@@ -72,7 +80,6 @@ export function useDragSelection({
         const overlay = e.currentTarget;
         overlay.releasePointerCapture?.(e.pointerId);
         if (s.clickedAnchor) {
-            // Was a click on a historical anchor — fire callback
             if (onClick) onClick(s.clickedAnchor);
             stateRef.current = { dragging: false, start: null, cur: null, clickedAnchor: null };
             return;
@@ -81,15 +88,24 @@ export function useDragSelection({
         const r = normalizeRect(s.start, s.cur);
         const area = r.w * r.h;
         stateRef.current = { dragging: false, start: null, cur: null, clickedAnchor: null };
+        _notify(null);
         if (area < MIN_AREA) return;
         if (onCommit) onCommit(r);
     }
 
-    function currentDragRect() {
-        const s = stateRef.current;
-        if (!s.dragging || !s.start || !s.cur) return null;
-        return normalizeRect(s.start, s.cur);
+    function subscribe(cb) {
+        subRef.current = cb;
+        return () => { subRef.current = null; };
     }
 
-    return { onPointerDown, onPointerMove, onPointerUp, currentDragRect };
+    // When historicalAnchors changes, our hit-test might be different. No
+    // explicit invalidate needed here — the next pointerdown will use the
+    // latest array via closure.
+
+    return {
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        subscribe,
+    };
 }
