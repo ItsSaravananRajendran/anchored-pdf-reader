@@ -5,13 +5,18 @@
  * call the SSE chat endpoint, update the assistant message as tokens arrive.
  */
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { streamChat } from "../api/sse";
 import { uuid } from "../lib/utils";
 import { useApp } from "../state/AppContext";
 
 export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterSend }) {
     const { dispatch } = useApp();
+    // Accumulator lives in a ref so the streaming callbacks always see the
+    // latest value without re-creating closures on every token. The backend
+    // streams raw chunks via SSE; we have to concatenate them client-side
+    // because the server only sends each token as it arrives.
+    const accumulatedRef = useRef("");
 
     const send = useCallback(async (text) => {
         if (!pendingAnchor || !sessionId) return;
@@ -36,6 +41,7 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
             status: "streaming",
             created_at: Date.now(),
         };
+        accumulatedRef.current = "";
         setMessages((m) => [...m, userMsg, assistantMsg]);
         dispatch({ type: "PENDING_ANCHOR_CLEAR" });
 
@@ -51,7 +57,9 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
                     rotation: pendingAnchor.rotation || 0,
                 },
                 signal: controller.signal,
-                onToken: (chunk, accumulated) => {
+                onToken: (chunk) => {
+                    accumulatedRef.current += chunk;
+                    const accumulated = accumulatedRef.current;
                     setMessages((m) => m.map((msg) => (
                         msg.id === assistantMsgId ? { ...msg, text: accumulated } : msg
                     )));
