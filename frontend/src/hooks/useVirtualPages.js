@@ -48,7 +48,15 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
 
     function pagesInViewport() {
         const scroll = scrollContainerRef?.current;
-        if (!scroll) return [];
+        // No scroll container (single-page mode, or container not mounted yet):
+        // there's effectively one page in view — return all currently
+        // mounted wraps. The parent decides which wraps to render; we just
+        // gate renders by viewport membership.
+        if (!scroll) {
+            return Object.keys(pagesRef.current)
+                .map((n) => parseInt(n, 10))
+                .filter((n) => Number.isFinite(n));
+        }
         const top = scroll.scrollTop - 2000;
         const bottom = scroll.scrollTop + scroll.clientHeight + 2000;
         const pageH = estimatePageHeightCss(scaleRef.current);

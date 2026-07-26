@@ -1,5 +1,8 @@
 /**
- * ReaderToolbar — URL bar, Load button, Library dropdown, zoom select, page-jump input.
+ * ReaderToolbar — URL bar, Load button, library, zoom, page navigation.
+ *
+ * Paging mode: ← / → buttons + N / total indicator + jump input.
+ * Keyboard ← / → handled in App.jsx via usePageNavigation.
  */
 
 import LibraryDropdown from "./LibraryDropdown";
@@ -16,7 +19,10 @@ export default function ReaderToolbar({
     zoomMode,
     setZoomMode,
     currentPage,
-    onPageJump,
+    pageCount,
+    onPrev,
+    onNext,
+    onGoToPage,
     onClearPending,
     pendingAnchor,
 }) {
@@ -39,6 +45,51 @@ export default function ReaderToolbar({
                 <LibraryDropdown library={library} onPick={onPickFromLibrary} />
             </div>
             <div className="reader-bar-right">
+                {pdfInfo && (
+                    <div className="page-nav">
+                        <button
+                            id="prevPageBtn"
+                            className="btn ghost"
+                            onClick={onPrev}
+                            disabled={currentPage <= 1}
+                            title="Previous page (←)"
+                            aria-label="Previous page"
+                        >
+                            ←
+                        </button>
+                        <span className="page-indicator" id="pageIndicator">
+                            <span className="current">{currentPage}</span>
+                            <span className="sep"> / </span>
+                            <span className="total">{pageCount}</span>
+                        </span>
+                        <button
+                            id="nextPageBtn"
+                            className="btn ghost"
+                            onClick={onNext}
+                            disabled={currentPage >= pageCount}
+                            title="Next page (→)"
+                            aria-label="Next page"
+                        >
+                            →
+                        </button>
+                        <input
+                            id="pageJump"
+                            type="number"
+                            min="1"
+                            max={pageCount || undefined}
+                            className="page-jump"
+                            placeholder="#"
+                            onChange={(e) => {
+                                const n = parseInt(e.target.value, 10);
+                                if (Number.isFinite(n) && n >= 1 && n <= pageCount) onGoToPage(n);
+                                e.target.value = "";
+                            }}
+                            disabled={!pdfInfo}
+                            title="Jump to page"
+                            aria-label="Jump to page"
+                        />
+                    </div>
+                )}
                 {pendingAnchor && (
                     <button className="btn ghost" onClick={onClearPending} title="Clear pending anchor">
                         Clear anchor
@@ -57,20 +108,6 @@ export default function ReaderToolbar({
                         </option>
                     ))}
                 </select>
-                <input
-                    id="pageJump"
-                    type="number"
-                    min="1"
-                    className="page-jump"
-                    value=""
-                    placeholder="#"
-                    onChange={(e) => {
-                        const n = parseInt(e.target.value, 10);
-                        if (Number.isFinite(n) && n >= 1) onPageJump(n);
-                    }}
-                    disabled={!pdfInfo}
-                    title="Type a page number"
-                />
             </div>
         </header>
     );

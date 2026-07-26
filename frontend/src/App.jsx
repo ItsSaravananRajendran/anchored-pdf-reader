@@ -5,12 +5,11 @@
  * where feature modules' handlers are tied together.
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { AppProvider, useApp, useStateSelector } from "./state/AppContext.jsx";
 
 import { usePersistence } from "./hooks/usePersistence";
 import { useVirtualPages } from "./hooks/useVirtualPages";
-import { usePageJump } from "./hooks/usePageJump";
 import { useSession } from "./hooks/useSession";
 import { useLoadPdf } from "./hooks/useLoadPdf";
 import { useSendMessage } from "./hooks/useSendMessage";
@@ -67,10 +66,37 @@ function Shell() {
         pageCount: pdfInfo?.page_count || 0,
         onStatusChange: ({ rendered }) => setRenderedPages(rendered),
     });
-    const pageJump = usePageJump({
-        pageCount: pdfInfo?.page_count || 0, scrollContainerRef,
-        currentPage, setCurrentPage, schedulePageRender: virtualPages.scheduleRender,
-    });
+    // Paging: discrete page navigation. Hooks keyboard shortcuts when a PDF
+    // is loaded. No internal scroll — the toolbar's ← / → buttons drive
+    // currentPage, which is the single source of truth for what's rendered.
+    const pageCount = pdfInfo?.page_count || 0;
+    const goPrev = useCallback(() => {
+        setCurrentPage((p) => Math.max(1, p - 1));
+    }, []);
+    const goNext = useCallback(() => {
+        setCurrentPage((p) => Math.min(pageCount, p + 1));
+    }, [pageCount]);
+    const goToPage = useCallback((n) => {
+        setCurrentPage(Math.max(1, Math.min(pageCount, Math.floor(n))));
+    }, [pageCount]);
+    useEffect(() => {
+        if (!pdfInfo) return undefined;
+        const onKey = (e) => {
+            // Don't interfere with form inputs.
+            const tag = (e.target?.tagName || "").toLowerCase();
+            if (tag === "input" || tag === "textarea" || e.target?.isContentEditable) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); goPrev(); }
+            else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+                e.preventDefault();
+                goNext();
+            } else if (e.key === "Home") { e.preventDefault(); goToPage(1); }
+            else if (e.key === "End") { e.preventDefault(); goToPage(pageCount); }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [pdfInfo, pageCount, goPrev, goNext, goToPage]);
+
     const session = useSession({ dispatch });
     const sendMessage = useSendMessage({
         pendingAnchor, sessionId, setMessages,
@@ -80,7 +106,8 @@ function Shell() {
         },
     });
     const actions = useAnchorActions({
-        pdfInfo, state, dispatch, setMessages, setSessionLabel, pageJump, loader, session,
+        pdfInfo, state, dispatch, setMessages, setSessionLabel,
+        goToPage, loader, session,
     });
 
     useEffect(() => { loader.refreshLibrary(); }, [loader.refreshLibrary]);
@@ -92,7 +119,8 @@ function Shell() {
                 onLoad={() => loader.loadFromUrl(urlInput)}
                 onPickFromLibrary={(hash) => loader.openByHash(hash)}
                 zoomMode={zoomMode} setZoomMode={setZoomMode}
-                currentPage={currentPage} onPageJump={pageJump.scrollToPage}
+                currentPage={currentPage} pageCount={pageCount}
+                onPrev={goPrev} onNext={goNext} onGoToPage={goToPage}
                 onClearPending={() => dispatch({ type: "PENDING_ANCHOR_CLEAR" })}
                 pendingAnchor={pendingAnchor}
             />
@@ -109,7 +137,7 @@ function Shell() {
                     <div className="reader-chat-grid" style={{ gridTemplateColumns: `1fr 6px ${chatWidth}px` }}>
                         <Reader
                             pdfInfo={pdfInfo} pdfDoc={loader.pdfDoc} scale={scale}
-                            scrollContainerRef={scrollContainerRef}
+                            pageNum={currentPage}
                             pages={virtualPages.pages} setPageEntry={virtualPages.setPageEntry}
                             scheduleRender={virtualPages.scheduleRender}
                             onCommitRect={actions.commitRect}

@@ -14,7 +14,7 @@ export function useAnchorActions({
     dispatch,
     setMessages,
     setSessionLabel,
-    pageJump,
+    goToPage,
     loader,
     session,
 }) {
@@ -54,9 +54,9 @@ export function useAnchorActions({
                 payload: { sessionId: anchor.session_id, anchors: [] },
             });
             setSessionLabel("viewing old session");
-            if (anchor.anchor_page) pageJump.scrollToPage(anchor.anchor_page);
+            if (anchor.anchor_page) goToPage(anchor.anchor_page);
         } catch (e) { console.error("[useAnchorActions] loadSessionForAnchor failed:", e); }
-    }, [dispatch, setMessages, setSessionLabel, pageJump]);
+    }, [dispatch, setMessages, setSessionLabel, goToPage]);
 
     const deleteAnchor = useCallback(async (anchor) => {
         const pdfHash = state.pdfInfo?.pdf_hash;
