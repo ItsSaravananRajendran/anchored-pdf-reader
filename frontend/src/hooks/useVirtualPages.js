@@ -23,6 +23,12 @@ const MAX_CONCURRENT_RENDERS = 3;
 let _activeRenders = 0;
 const _queue = [];
 const _tasksByPageNum = new Map();
+// Tracks lastUsed timestamps synchronously (not in React state). React's
+// setPages queues updates and pagesRef.current lags, so LRU eviction
+// based on pagesRef alone can briefly exceed MAX when several renders
+// complete in the same microtask. _lastUsedByPage is updated the moment
+// a render finishes, so evictIfOverBudget has accurate recency info.
+const _lastUsedByPage = new Map();
 
 export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, onStatusChange }) {
     const [pages, setPages] = useState({});
@@ -46,9 +52,11 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         const top = scroll.scrollTop - 2000;
         const bottom = scroll.scrollTop + scroll.clientHeight + 2000;
         const pageH = estimatePageHeightCss(scaleRef.current);
-        const maxP = Math.min(pageCount, 40);
+        // Iterate the full page list (cheap — a 5000-page book is still
+        // well under a millisecond for this loop). The earlier 40-page
+        // cap blocked renders for page 41+.
         const result = [];
-        for (let p = 1; p <= maxP; p += 1) {
+        for (let p = 1; p <= pageCount; p += 1) {
             const effectiveTop = (p - 1) * pageH;
             const effectiveH = pageH;
             if (effectiveTop + effectiveH >= top && effectiveTop <= bottom) {
@@ -73,6 +81,19 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         _drain();
     }
 
+    // Schedule an eviction to happen microtask-from-now. Multiple renders
+    // finishing in the same frame otherwise grow the rendered count past
+    // MAX before any single evict passes see the latest state.
+    let _evictQueued = false;
+    function _evictSoon() {
+        if (_evictQueued) return;
+        _evictQueued = true;
+        queueMicrotask(() => {
+            _evictQueued = false;
+            evictIfOverBudget();
+        });
+    }
+
     const _viewportSetRef = useRef(new Set());
     function pagesInViewportSet() {
         const set = _viewportSetRef.current;
@@ -91,37 +112,43 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
      */
     function evictIfOverBudget() {
         const viewport = pagesInViewportSet();
-        const entries = Object.entries(pagesRef.current);
-        const rendered = entries.filter(([, e]) => e.rendered);
-        if (rendered.length <= MAX_RENDERED_PAGES) return;
-        rendered.sort(([, a], [, b]) => (a.lastUsed || 0) - (b.lastUsed || 0));
-        const toEvict = rendered.length - MAX_RENDERED_PAGES;
+        // Sort ALL known rendered pages by their synchronous lastUsed
+        // (from _lastUsedByPage), not pagesRef.current.lastUsed which
+        // may be stale if React state hasn't flushed.
+        const allKnown = Array.from(_lastUsedByPage.keys());
+        if (allKnown.length <= MAX_RENDERED_PAGES) return;
+        allKnown.sort((a, b) => _lastUsedByPage.get(a) - _lastUsedByPage.get(b));
+        const toEvict = allKnown.length - MAX_RENDERED_PAGES;
         const evictIds = [];
-        for (const [pageNum, entry] of rendered) {
+        for (const p of allKnown) {
             if (evictIds.length >= toEvict) break;
-            if (viewport.has(Number(pageNum))) continue;
-            const task = _tasksByPageNum.get(Number(pageNum));
-            if (task) {
-                try { task.cancel(); } catch { /* ignore */ }
-                _tasksByPageNum.delete(Number(pageNum));
+            if (viewport.has(p)) continue;
+            evictIds.push(p);
+        }
+        if (evictIds.length === 0) return;
+        // Apply eviction to React state + clean canvas + cancel task.
+        setPages((prev) => {
+            const next = { ...prev };
+            for (const id of evictIds) {
+                const entry = next[id];
+                if (entry?.canvas) entry.canvas.width = 0;
+                const task = _tasksByPageNum.get(id);
+                if (task) {
+                    try { task.cancel(); } catch { /* ignore */ }
+                    _tasksByPageNum.delete(id);
+                }
+                delete next[id];
+                _lastUsedByPage.delete(id);
             }
-            if (entry.canvas) entry.canvas.width = 0;
-            evictIds.push(pageNum);
-        }
-        if (evictIds.length > 0) {
-            setPages((prev) => {
-                const next = { ...prev };
-                for (const id of evictIds) delete next[id];
-                return next;
-            });
-        }
+            return next;
+        });
     }
 
     function _drain() {
         while (_activeRenders < MAX_CONCURRENT_RENDERS && _queue.length > 0) {
             const job = _queue.shift();
             _activeRenders += 1;
-            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget, pdfDocRef)
+            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, _evictSoon, pdfDocRef)
                 .finally(() => {
                     _activeRenders -= 1;
                     _drain();
@@ -169,6 +196,7 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
             try { task.cancel(); } catch { /* ignore */ }
         }
         _tasksByPageNum.clear();
+        _lastUsedByPage.clear();
         setPages((prev) => {
             const next = {};
             for (const k of Object.keys(prev)) {
@@ -195,7 +223,7 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
     return { pages, setPageEntry, scheduleRender, pagesInViewport };
 }
 
-async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget, pdfDocRef) {
+async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef) {
     const { pageNum, canvas, overlay } = job;
     const scale = scaleRef.current;
     const pdfDoc = pdfDocRef.current;
@@ -226,6 +254,9 @@ async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evi
             _tasksByPageNum.delete(pageNum);
         }
         if (scaleRef.current !== scale) return;
+        // Update sync timestamp BEFORE setPages — needed by evictIfOverBudget
+        // which reads _lastUsedByPage in microtasks after this render lands.
+        _lastUsedByPage.set(pageNum, Date.now());
         setPages((prev) => ({
             ...prev,
             [pageNum]: {
@@ -241,7 +272,10 @@ async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evi
             const renderedCount = Object.values(pagesRef.current).filter((e) => e.rendered).length;
             onStatusChange({ rendered: renderedCount, total: pdfDoc.numPages });
         }
-        evictIfOverBudget();
+        // Defer eviction so concurrent renders finishing in the same
+        // task don't each see a snapshot of pagesRef.current pre-eviction.
+        if (evictIfOverBudget_soon) evictIfOverBudget_soon();
+        else evictIfOverBudget();
     } catch (err) {
         console.error("[useVirtualPages] render failed for page", pageNum, err);
         setPages((prev) => ({
