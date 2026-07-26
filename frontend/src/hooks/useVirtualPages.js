@@ -50,6 +50,18 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
                 .map((n) => parseInt(n, 10))
                 .filter((n) => Number.isFinite(n));
         }
+        // Paging mode: the scroll container has the `reader-single-page`
+        // class. Its layout is `overflow: hidden` (no scrolling), so
+        // scrollTop is always 0 and only the pages the parent has mounted
+        // are visible. Treat all mounted wraps as in-viewport — the
+        // scroll-based math below would return pages 1..3 and silently
+        // hide page 4+ (the bug the regression test caught: jumping
+        // to p.5 left the canvas at default 300x150).
+        if (scroll.classList && scroll.classList.contains("reader-single-page")) {
+            return Object.keys(pagesRef.current)
+                .map((n) => parseInt(n, 10))
+                .filter((n) => Number.isFinite(n));
+        }
         const top = scroll.scrollTop - 2000;
         const bottom = scroll.scrollTop + scroll.clientHeight + 2000;
         const pageH = estimatePageHeightCss(scaleRef.current);
