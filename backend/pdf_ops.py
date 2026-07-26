@@ -9,7 +9,7 @@ import pdfplumber
 import pypdfium2 as pdfium
 from PIL import Image
 
-from . import db
+from . import db_repos
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 PDFS_DIR = DATA_DIR / "pdfs"
@@ -112,14 +112,14 @@ async def get_text_for_session(pdf_hash, pages):
     to_extract = []
 
     for p in pages:
-        cached_text, has_text = db.get_page_text(pdf_hash, p)
+        cached_text, has_text = db_repos.get_page_text(pdf_hash, p)
         if has_text is False and cached_text is None and cached_text != "":
             # Two cases:
             #   (a) row missing entirely (cached_text is None, has_text is False) -> extract
             #   (b) row cached as image-only (cached_text is None, has_text is False too) -> skip
             # We can't distinguish (a) from (b) on a None hit, so always re-extract on missing.
             # The cheaper signal: check whether the row exists at all.
-            row_exists = db._page_text_exists(pdf_hash, p)
+            row_exists = db_repos._page_text_exists(pdf_hash, p)
             if not row_exists:
                 to_extract.append(p)
                 results[p] = None
@@ -129,7 +129,7 @@ async def get_text_for_session(pdf_hash, pages):
             results[p] = cached_text
 
     if to_extract:
-        pdf = db.get_pdf(pdf_hash)
+        pdf = db_repos.get_pdf(pdf_hash)
         if pdf is not None:
             def _do_extract(page):
                 return page, *extract_page_text(pdf["path"], page)
@@ -138,7 +138,7 @@ async def get_text_for_session(pdf_hash, pages):
             tasks = [loop.run_in_executor(None, _do_extract, p) for p in to_extract]
             for fut in asyncio.as_completed(tasks):
                 page, text, has_text = await fut
-                db.set_page_text(pdf_hash, page, text, has_text)
+                db_repos.set_page_text(pdf_hash, page, text, has_text)
                 results[page] = text
 
     return results
