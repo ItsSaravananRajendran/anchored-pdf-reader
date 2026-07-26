@@ -28,9 +28,16 @@ export default function PageCanvas({
 
     // When this element mounts, register it with the virtual-pages hook
     useEffect(() => {
-        setPageEntry(pageNum, { wrap: wrapRef.current, canvas: canvasRef.current, overlay: overlayRef.current });
-        // Trigger initial render for this page
-        scheduleRender(pageNum, canvasRef.current, overlayRef.current);
+        const canvas = canvasRef.current;
+        const overlay = overlayRef.current;
+        const wrap = wrapRef.current;
+        setPageEntry(pageNum, { wrap, canvas, overlay });
+        // Defer scheduleRender to the next microtask. The setPageEntry above
+        // is batched with the parent hook's [pdfDoc] reset; calling
+        // scheduleRender synchronously here would read pagesRef.current BEFORE
+        // React commits our setPageEntry, so entry would be undefined and
+        // the render would be silently dropped.
+        queueMicrotask(() => scheduleRender(pageNum, canvas, overlay));
         return () => {
             // Don't evict the entry — virtual-pages handles that
         };

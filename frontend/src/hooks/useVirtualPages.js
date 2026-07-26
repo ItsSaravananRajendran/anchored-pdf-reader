@@ -65,7 +65,10 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         if (entry.rendering) return;
         if (_queue.some((q) => q.pageNum === pageNum)) return;
         if (!pagesInViewportSet().has(pageNum)) return;
-        _queue.push({ pageNum, canvas, overlay, pdfDoc: pdfDocRef.current });
+        // Don't push yet if pdfDoc isn't ready. The render fires later when
+        // pdfDoc arrives via the [pdfDoc] effect's "render viewport" call.
+        if (!pdfDocRef.current) return;
+        _queue.push({ pageNum, canvas, overlay });
         setPageEntry(pageNum, { rendering: true });
         _drain();
     }
@@ -118,7 +121,7 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         while (_activeRenders < MAX_CONCURRENT_RENDERS && _queue.length > 0) {
             const job = _queue.shift();
             _activeRenders += 1;
-            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget)
+            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget, pdfDocRef)
                 .finally(() => {
                     _activeRenders -= 1;
                     _drain();
@@ -154,21 +157,48 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pdfDoc, scrollContainerRef, pageCount]);
 
-    // Cancel all in-flight tasks + reset pages when the PDF changes.
+    // Cancel all in-flight tasks + invalidate render cache when the PDF changes.
+    // IMPORTANT: preserve the canvas/overlay refs in each entry. They were
+    // registered by PageCanvas's mount effect, which runs BEFORE this effect
+    // in React's commit phase. If we did setPages({}) here, every later
+    // scheduleRender() would see entry=undefined and bail out — pages would
+    // never render. Instead, mark every entry as not-yet-rendered-at-this-doc
+    // so it gets re-rendered on the next schedule call.
     useEffect(() => {
         for (const task of _tasksByPageNum.values()) {
             try { task.cancel(); } catch { /* ignore */ }
         }
         _tasksByPageNum.clear();
-        setPages({});
+        setPages((prev) => {
+            const next = {};
+            for (const k of Object.keys(prev)) {
+                next[k] = { ...prev[k], rendered: false, renderedAt: null };
+            }
+            return next;
+        });
+        // pdfDoc just became available. PageCanvas's mount effect already
+        // called scheduleRender (which was a no-op because pdfDocRef.current
+        // was null). Now retry those renders for every viewport page.
+        if (pdfDoc) {
+            // Wait one microtask so setPages has flushed and pagesRef is current.
+            queueMicrotask(() => {
+                for (const p of pagesInViewport()) {
+                    const entry = pagesRef.current[p];
+                    if (entry?.canvas && entry?.overlay) {
+                        scheduleRender(p, entry.canvas, entry.overlay);
+                    }
+                }
+            });
+        }
     }, [pdfDoc]);
 
     return { pages, setPageEntry, scheduleRender, pagesInViewport };
 }
 
-async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget) {
-    const { pageNum, canvas, overlay, pdfDoc } = job;
+async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget, pdfDocRef) {
+    const { pageNum, canvas, overlay } = job;
     const scale = scaleRef.current;
+    const pdfDoc = pdfDocRef.current;
     try {
         const pdfjs = await getPdfJs();
         if (!pdfDoc) throw new Error("no pdfDoc");
