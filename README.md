@@ -1,66 +1,110 @@
-# PDF Reader — Anchored AI Chat
+# Anchored PDF Reader
 
-Self-hosted PDF reader where every chat question carries a rectangle anchor from the page.
+A self-hosted web app that lets you load a PDF, drag-rectangle any region on
+a page, and ask an AI question about that exact spot. Every question and
+answer is stored with its (page, normalized rectangle) so you can click back
+to the spot from the chat history.
 
-## Quick start
+## Features
 
-```bash
-cd ~/projects/pdf-reader
-source .venv/bin/activate
-# BIND_HOST and BIND_PORT default to 127.0.0.1:8910. Override via env if needed.
-# MINIMAX_API_KEY must be set in the calling shell.
-python -m uvicorn backend.app:app --host 127.0.0.1 --port 8910
-```
-
-Then open http://127.0.0.1:8910 in a browser, paste a PDF URL, draw a rectangle, ask a question.
-
-## Verified end-to-end
-
-Smoke-tested 2026-07-25 with `https://arxiv.org/pdf/1706.03762.pdf` (Attention Is All You Need):
-- PDF download: 2.2 MB, 15 pages, hash + dedup ✓
-- Page-text extraction: 2580 chars from page 1 ✓
-- Page PNG render: 343 KB ✓
-- PDF.js file serving with HTTP Range: 206 + Content-Range ✓
-- Chat streaming: 6.9 s for full response, M3 cited the right title and 8 authors ✓
-- Persistence: session + 2 messages + anchors + rects stored in SQLite ✓
+- **Load a PDF from a URL** — first load downloads + caches, subsequent loads
+  of the same URL are instant.
+- **Continuous-scroll reader** — all pages stacked vertically, smooth page
+  navigation.
+- **Per-page zoom** (50/75/100/125/150/200% + fit-width).
+- **Drag to resize the chat panel** (240–800px).
+- **Drag-rectangle to set an anchor** on any page.
+- **Library** — open any cached PDF by title without re-downloading.
+- **Anchors-in-this-book sidebar** — every rectangle you've ever asked
+  about in the current PDF. Click → load that conversation. × → delete.
+- **Time-machine mode** — click an old anchor to see the chat that produced
+  it.
+- **Markdown + math (KaTeX)** in assistant replies.
+- **Virtual rendering** — at most ~11 pages in memory at any time. 500-page
+  books stay snappy.
+- **Persistent preferences** (zoom + chat width) via localStorage.
 
 ## Stack
 
-- Backend: FastAPI + SQLite
-- Frontend: vanilla JS + PDF.js (no build step)
-- LLM: MiniMax-M3 via OpenAI-compatible `/v1/chat/completions`
-- PDF processing: pdfplumber (text), pypdfium2 (rendering crops), pypdf (validation)
+- **Backend:** FastAPI + SQLite + `pypdfium2` + `pdfplumber` + `httpx`.
+- **Frontend:** React 18 + Vite + vanilla CSS. PDF.js from CDN.
+- **LLM:** [MiniMax](https://api.minimax.io) M3 (OpenAI-compatible streaming).
+  Reasoning tokens are stripped from the output stream.
 
-## Layout
+## Project layout
+
+See `ARCHITECTURE.md` for the full breakdown.
 
 ```
-backend/
-  app.py              # FastAPI app
-  db.py               # SQLite schema + helpers
-  pdf_ops.py          # download, hash, page text, render crop
-  minimax_client.py   # streaming multimodal chat
-frontend/
-  index.html
-  app.js
-  styles.css
-data/
-  app.db              # SQLite
-  pdfs/<hash[:2]>/<hash>.pdf
+backend/                    FastAPI app (Python)
+frontend/                   React app (JavaScript)
+├── index.html               Entry HTML
+├── styles/                  Design tokens + reset + layout
+├── src/                     Source (≤250 lines per file)
+│   ├── main.jsx
+│   ├── App.jsx              Top-level wiring
+│   ├── state/               useReducer + Context
+│   ├── events.js            Pub/sub for cross-feature flows
+│   ├── api/                 fetch + SSE
+│   ├── lib/                 Pure utilities
+│   ├── hooks/               Custom hooks
+│   └── components/          UI components
+└── dist/                    Built bundle (gitignored)
+tests/                       pytest (HTTP-level + browser)
+data/                        SQLite + cached PDFs (gitignored)
 ```
 
-## Spec
+## Development setup
 
-See https://100.86.17.65:8080/preview?path=reports/pdf-reader-spec-2026-07-25/index.html
+You'll need Python 3.9+, Node 20+, and a MiniMax API key.
 
-## Endpoints
+```bash
+git clone https://github.com/ItsSaravananRajendran/anchored-pdf-reader.git
+cd anchored-pdf-reader
 
-- `GET /` — frontend
-- `GET /healthz` — health check
-- `POST /api/pdf/load` — `{url}` → `{pdf_hash, page_count, title}` (downloads + caches)
-- `GET /api/pdf/{hash}/file` — raw PDF bytes with HTTP Range support (PDF.js fetches this)
-- `GET /api/pdf/{hash}/page/{n}.png` — render page N as PNG (for image-only fallback / thumbnails)
-- `POST /api/pdf/{hash}/text` — `{pages:[1,2,3]}` → `{results:{1:"...",2:"...",...}, has_text}`
-- `POST /api/session/new` — `{pdf_hash}` → `{session_id}`
-- `GET /api/session/{id}/messages` — load chat history (for refresh restore)
-- `DELETE /api/session/{id}` — clear a session
-- `POST /api/chat` — `{session_id, message_id, text, anchor:{page,rect,rotation}}` → SSE stream of tokens
+# Backend
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[test]"
+
+# Frontend
+npm install
+
+# Two terminals:
+# 1. Backend (port 8910)
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8910 --reload
+
+# 2. Frontend dev server (port 5173, proxies /api to 8910)
+npm run dev
+
+# 3. (Optional) Build the production bundle and serve via the backend:
+npm run build
+```
+
+Open http://127.0.0.1:5173 in dev, or http://127.0.0.1:8910 against the built bundle.
+
+## Environment
+
+Copy `.env.example` to `.env` and fill in `MINIMAX_API_KEY`. See `backend/settings.py`
+for all available options.
+
+## Tests
+
+```bash
+# HTTP-level (fast, no browser)
+python -m pytest tests/
+
+# Browser-level (Playwright, slow)
+python -m pytest tests/ -m browser
+
+# All
+python -m pytest tests/ -m "not browser" && python -m pytest tests/ -m browser
+```
+
+## Security
+
+See `SECURITY.md` — this is a single-user app with no auth. Run it on a
+trusted network only.
+
+## License
+
+MIT. See `LICENSE`.

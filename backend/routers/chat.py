@@ -6,6 +6,8 @@ each message state to SQLite.
 """
 from __future__ import annotations
 
+from typing import Dict, List, Optional, Set, Tuple
+
 import asyncio
 import base64
 import json
@@ -88,7 +90,7 @@ async def chat(req: ChatRequest):
 
 # ---- Helpers ------------------------------------------------------
 
-async def _prepare_context(pdf_path: str, page: int, rect: dict) -> tuple[str | None, str]:
+async def _prepare_context(pdf_path: str, page: int, rect: dict) -> Tuple[Optional[str], str]:
     """Returns (page_text or None, base64-encoded PNG of the rect crop)."""
     text_results = await pdf_ops.get_text_for_session(_hash_from_path(pdf_path), [page])
     page_text = text_results.get(page)
@@ -109,7 +111,7 @@ def _hash_from_path(pdf_path: str) -> str:
         return row["hash"] if row else ""
 
 
-def _build_history(session_id: str, skip_ids: set[str]) -> list[dict]:
+def _build_history(session_id: str, skip_ids: Set[str]) -> List[Dict]:
     rows = db.list_messages(session_id)
     filtered = [r for r in rows if r["id"] not in skip_ids]
     return [
@@ -122,11 +124,11 @@ async def _event_stream(
     api_key: str,
     question: str,
     page_image_b64: str,
-    page_text: str | None,
-    history: list[dict],
+    page_text: Optional[str],
+    history: List[Dict],
     assistant_id: str,
 ):
-    accumulated: list[str] = []
+    accumulated: List[str] = []
     try:
         async for event in minimax_client.stream_chat(
             api_key=api_key,

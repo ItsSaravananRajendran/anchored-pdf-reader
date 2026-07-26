@@ -5,7 +5,7 @@ so the routers stay short.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -43,7 +43,7 @@ class RectCropRequest(BaseModel):
 
 
 class TextRequest(BaseModel):
-    pages: list[int] = Field(..., min_length=1, max_length=10)
+    pages: List[int] = Field(..., min_length=1, max_length=10)
 
 
 # --- Sessions ---

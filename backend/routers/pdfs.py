@@ -5,6 +5,8 @@ extraction. The byte-serving endpoints (file/page/rect) live in pdf_bytes.py.
 """
 from __future__ import annotations
 
+from typing import Optional, Tuple
+
 import asyncio
 
 from fastapi import APIRouter, HTTPException
@@ -134,7 +136,7 @@ async def healthz():
 
 # ---- Helpers ------------------------------------------------------
 
-async def _inspect_pdf(path: str) -> tuple[int | None, str | None]:
+async def _inspect_pdf(path: str) -> Tuple[Optional[int], Optional[str]]:
     """Get page count and title off the main thread. Returns (page_count, title)."""
     def _work():
         try:

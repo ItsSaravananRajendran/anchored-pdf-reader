@@ -7,6 +7,8 @@ Split out from pdfs.py to keep each router file under 250 lines.
 """
 from __future__ import annotations
 
+from typing import Tuple
+
 import asyncio
 from pathlib import Path
 
@@ -111,7 +113,7 @@ async def pdf_rect_crop(pdf_hash: str, req: RectCropRequest):
     )
 
 
-def _parse_range(range_header: str, file_size: int) -> tuple[int, int, int]:
+def _parse_range(range_header: str, file_size: int) -> Tuple[int, int, int]:
     """Parse 'bytes=start-end'. Returns (start, end, length). Raises ValueError on garbage."""
     units, _, rng = range_header.partition("=")
     if units.strip() != "bytes":

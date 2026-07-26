@@ -98,7 +98,11 @@ def http_client(server_url) -> httpx.Client:
 def playwright_session():
     """A single Playwright Chromium browser for the whole session."""
     # Lazy import so tests that don't use Playwright don't pay the cost
-    from playwright.sync_api import sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        pytest.skip("Playwright not installed (install with `pip install playwright && playwright install chromium`)")
+        return
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         yield browser

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anchored-pdf-reader"
+version = "1.0.0"
+description = "Self-hosted PDF reader with anchored AI chat"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Saravanan Rajendran" }]
+keywords = ["pdf", "reader", "ai-chat", "anchored-ai"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "pydantic>=2.0",
+    "httpx>=0.24",
+    "pypdfium2>=4.0",
+    "pdfplumber>=0.10",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.0",
+    "playwright>=1.40",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers --tb=short"
+markers = [
+    "browser: requires Playwright (deselect with '-m \"not browser\"')",
+]

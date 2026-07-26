@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import io
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import httpx
 import pdfplumber
 import pypdfium2 as pdfium
@@ -22,7 +22,7 @@ def _pdf_path(hash_: str) -> Path:
     return PDFS_DIR / hash_[:2] / hash_
 
 
-async def download_pdf(url: str) -> tuple[str, int, str]:
+async def download_pdf(url: str) -> Tuple[str, int, str]:
     """Download a PDF, stream-hash, store on disk. Returns (hash, bytes, path)."""
     async with httpx.AsyncClient(follow_redirects=True, timeout=DOWNLOAD_TIMEOUT) as client:
         async with client.stream("GET", url) as r:
