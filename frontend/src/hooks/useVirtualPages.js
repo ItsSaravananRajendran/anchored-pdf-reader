@@ -119,6 +119,20 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         }
     }
 
+    // Clear the rendering flag and re-queue. Used by _renderOne when the
+    // scale changed during the render — the entry is left with
+    // rendering: true from setPageEntry's queueing call, which would
+    // block any re-queue. Mutates pagesRef.current synchronously so the
+    // very next scheduleRender call (in a microtask) sees rendering: false.
+    function _clearRenderingAndRequeue(pageNum, canvas, overlay) {
+        const prev = pagesRef.current;
+        if (!prev[pageNum]) return;
+        const next = { ...prev, [pageNum]: { ...prev[pageNum], rendering: false } };
+        pagesRef.current = next;
+        setPages(next);
+        queueMicrotask(() => scheduleRender(pageNum, canvas, overlay));
+    }
+
     // Schedule an eviction to happen microtask-from-now. Multiple renders
     // finishing in the same frame otherwise grow the rendered count past
     // MAX before any single evict passes see the latest state.
@@ -186,7 +200,7 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         while (_activeRenders < MAX_CONCURRENT_RENDERS && _queue.length > 0) {
             const job = _queue.shift();
             _activeRenders += 1;
-            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, _evictSoon, pdfDocRef)
+            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, _evictSoon, pdfDocRef, _clearRenderingAndRequeue)
                 .finally(() => {
                     _activeRenders -= 1;
                     _drain();
@@ -258,10 +272,29 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         }
     }, [pdfDoc]);
 
+    // When the scale changes (zoom dropdown, fit-width recompute, window
+    // resize with fit-width), the canvas needs a fresh render at the new
+    // scale. scheduleRender's early-return compares entry.renderedAt to
+    // scaleRef.current so it bails correctly when nothing changed, and
+    // re-runs when scaleRef.current moves.
+    useEffect(() => {
+        if (!pdfDoc) return;
+        // Defer so the latest scaleRef.current is committed by React.
+        queueMicrotask(() => {
+            for (const p of pagesInViewport()) {
+                const entry = pagesRef.current[p];
+                if (entry?.canvas && entry?.overlay) {
+                    scheduleRender(p, entry.canvas, entry.overlay);
+                }
+            }
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pdfDoc, scale]);
+
     return { pages, setPageEntry, scheduleRender, pagesInViewport };
 }
 
-async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef) {
+async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef, clearRenderingAndRequeue) {
     const { pageNum, canvas, overlay } = job;
     const scale = scaleRef.current;
     const pdfDoc = pdfDocRef.current;
@@ -291,7 +324,18 @@ async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evi
         } finally {
             _tasksByPageNum.delete(pageNum);
         }
-        if (scaleRef.current !== scale) return;
+        if (scaleRef.current !== scale) {
+            // Scale changed while we were rendering. The canvas is now sized
+            // for the old scale (which we just overwrote) and the entry
+            // is left with rendering: true from setPageEntry, blocking
+            // future re-queues. Clear the flag and re-queue at the new
+            // scale. We don't undo the canvas.width/height here because
+            // the next render will overwrite them.
+            if (clearRenderingAndRequeue) {
+                clearRenderingAndRequeue(pageNum, canvas, overlay);
+            }
+            return;
+        }
         // Update sync timestamp BEFORE setPages — needed by evictIfOverBudget
         // which reads _lastUsedByPage in microtasks after this render lands.
         _lastUsedByPage.set(pageNum, Date.now());

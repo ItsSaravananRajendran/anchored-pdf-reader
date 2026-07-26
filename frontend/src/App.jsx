@@ -42,7 +42,10 @@ function Shell() {
     const errorMessage = useStateSelector((s) => s.errorMessage);
 
     const [urlInput, setUrlInput] = useState("");
-    const [zoomMode, setZoomMode] = useState("1.0");
+    // Default to fit-width so the page fills the reader pane on first load
+    // (avoids the giant blank gutter to the right of a 612px canvas in a
+    // ~940px pane). Users can still pick a fixed zoom from the dropdown.
+    const [zoomMode, setZoomMode] = useState("fit-width");
     const [chatWidth, setChatWidth] = useState(420);
     const [currentPage, setCurrentPage] = useState(1);
     const [messages, setMessages] = useState([]);
@@ -143,6 +146,7 @@ function Shell() {
                             onCommitRect={actions.commitRect}
                             onClickAnchor={actions.loadSessionForAnchor}
                             historicalAnchors={bookAnchors}
+                            scrollContainerRef={scrollContainerRef}
                         />
                         <PanelDivider getChatWidth={() => chatWidth} setChatWidth={setChatWidth} persistPrefs={() => {}} />
                         <ChatPanel
