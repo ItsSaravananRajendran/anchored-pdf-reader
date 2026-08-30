@@ -76,27 +76,26 @@ export default function PageCanvas({
     const H = height * displayScale;
     // Canvas bitmap dimensions — rendered at sourceScale, displayed at the
     // wrap's display size. The browser handles the scale factor.
-    const sourceW = width * sourceScale;
-    const sourceH = height * sourceScale;
-    const canvasScale = displayScale / sourceScale;
+    const bitmapW = width * sourceScale;
+    const bitmapH = height * sourceScale;
 
-    // Resize the overlay canvas to match the DISPLAY size (not the source
-    // bitmap size). Overlay bitmap coords are in display CSS px, so drag
-    // rects and anchor highlights stay aligned with what the user sees
-    // regardless of zoom level.
+    // Resize the overlay canvas to match the PAGE canvas bitmap dimensions
+    // (not the display dimensions). Overlay bitmap coords == page canvas
+    // bitmap coords, so drawing in `rect.x * bitmapW` lands in the same
+    // place as the page content. The overlay's CSS size is set to match
+    // the wrap (100%), so the bitmap is scaled to display by the browser
+    // in lockstep with the page canvas.
     useEffect(() => {
         const overlay = overlayRef.current;
         if (!overlay) return;
-        const dpr = 1;
-        const tw = Math.round(W * dpr);
-        const th = Math.round(H * dpr);
+        const tw = Math.round(bitmapW);
+        const th = Math.round(bitmapH);
         if (overlay.width !== tw || overlay.height !== th) {
             overlay.width = tw;
             overlay.height = th;
-            overlay.style.width = W + "px";
-            overlay.style.height = H + "px";
+            // CSS size is 100% of wrap (set via JSX style below).
         }
-    }, [W, H]);
+    }, [bitmapW, bitmapH]);
 
     // Memoized filter — only re-runs when historicalAnchors or pageNum changes.
     const pageAnchors = useMemo(
@@ -104,26 +103,28 @@ export default function PageCanvas({
         [historicalAnchors, pageNum],
     );
 
-    // Draw historical anchors. Overlay is at display size, so rect coords
-    // are fractions of display dimensions — the setTransform stays identity.
+    // Draw historical anchors. Overlay bitmap == page canvas bitmap, so
+    // rect coords are fractions of bitmap dimensions — they land in the
+    // same pixel positions as the page content (the browser scales both
+    // bitmaps to display dims in lockstep).
     useEffect(() => {
         const overlay = overlayRef.current;
         if (!overlay || !pageEntry?.viewport) return;
         if (pageAnchors.length === 0) return;
         const ctx = overlay.getContext("2d");
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, W, H);
+        ctx.clearRect(0, 0, bitmapW, bitmapH);
         for (const a of pageAnchors) {
             const r = a.anchor_rect;
             ctx.strokeStyle = a.role === "user" ? "rgba(210,153,34,0.85)" : "rgba(63,185,80,0.85)";
             ctx.fillStyle = a.role === "user" ? "rgba(210,153,34,0.10)" : "rgba(63,185,80,0.08)";
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([6, 3]);
-            ctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H);
-            ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
+            ctx.lineWidth = 1.5 * sourceScale;
+            ctx.setLineDash([6 * sourceScale, 3 * sourceScale]);
+            ctx.fillRect(r.x * bitmapW, r.y * bitmapH, r.w * bitmapW, r.h * bitmapH);
+            ctx.strokeRect(r.x * bitmapW, r.y * bitmapH, r.w * bitmapW, r.h * bitmapH);
             ctx.setLineDash([]);
         }
-    }, [pageAnchors, W, H, pageEntry]);
+    }, [pageAnchors, bitmapW, bitmapH, sourceScale, pageEntry]);
 
     // Live drag rectangle. Subscribe to drag changes — fires only when
     // the rect actually moves (no rAF polling, no per-render redraws).
@@ -133,17 +134,17 @@ export default function PageCanvas({
         const ctx = overlay.getContext("2d");
         const unsubscribe = drag.subscribe((rect) => {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, W, H);
+            ctx.clearRect(0, 0, bitmapW, bitmapH);
             if (rect) {
                 ctx.strokeStyle = "rgba(88,166,255,0.95)";
                 ctx.fillStyle = "rgba(88,166,255,0.18)";
-                ctx.lineWidth = 2;
-                ctx.fillRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
-                ctx.strokeRect(rect.x * W, rect.y * H, rect.w * W, rect.h * H);
+                ctx.lineWidth = 2 * sourceScale;
+                ctx.fillRect(rect.x * bitmapW, rect.y * bitmapH, rect.w * bitmapW, rect.h * bitmapH);
+                ctx.strokeRect(rect.x * bitmapW, rect.y * bitmapH, rect.w * bitmapW, rect.h * bitmapH);
             }
         });
         return unsubscribe;
-    }, [W, H, drag]);
+    }, [bitmapW, bitmapH, sourceScale, drag]);
 
     const wrapStyle = {
         "--wrap-w": W + "px",

@@ -277,7 +277,7 @@ export function useVirtualPages({ pdfDoc, displayScale, sourceScale, scrollConta
 
 async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef, sourceScale) {
     const { pageNum, canvas, overlay } = job;
-    // Render the bitmap at sourceScale (a constant — the page is decoded
+    // Render the page bitmap at sourceScale (a constant — the page is decoded
     // once at the highest quality needed). The visible canvas uses CSS
     // width: 100% / height: 100% in PageCanvas, so the browser handles
     // the scale-up / scale-down to fit the wrap's display size. This is
@@ -297,12 +297,22 @@ async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evi
         // Don't set canvas.style.width/height here — PageCanvas owns the
         // CSS display size (width: 100% of the wrap). Setting it here
         // would override that and break the fit-to-wrap scaling.
-        overlay.width = canvas.width;
-        overlay.height = canvas.height;
-        // Overlay's CSS size is also 100% of wrap (set in PageCanvas style).
-        // We DO need to update overlay bitmap dimensions if they changed
-        // (the canvas resize itself doesn't change bitmap dimensions — only
-        // explicit .width/.height do that).
+        // Note: overlay.width/height are NOT set here. PageCanvas's
+        // own [bitmapW, bitmapH] effect sizes the overlay to match the
+        // page canvas bitmap, so overlay bitmap coords == page canvas
+        // bitmap coords. The overlay's CSS size is set to 100% of the
+        // wrap (in PageCanvas's JSX style), so the browser scales the
+        // bitmap to display in lockstep with the page canvas.
+        // Publish viewport dims to pageEntry so anchor highlights and
+        // historical-anchor rendering know the page has rendered and
+        // can position themselves in bitmap coords.
+        setPages((prev) => ({
+            ...prev,
+            [pageNum]: {
+                ...(prev[pageNum] || {}),
+                viewport: { width: viewport.width, height: viewport.height },
+            },
+        }));
         const ctx = canvas.getContext("2d");
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         const task = page.render({ canvasContext: ctx, viewport });
