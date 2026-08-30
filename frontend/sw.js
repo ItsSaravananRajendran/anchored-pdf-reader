@@ -14,7 +14,7 @@
  * cached one. No TTL needed.
  */
 
-const CACHE_NAME = "pdf-reader-pdfs-v1";
+const CACHE_NAME = "pdf-reader-pdfs-v2";
 const MAX_ENTRIES = 8; // ~most-recent 8 PDFs on disk
 const PDF_URL_RE = /^\/api\/pdf\/[a-f0-9]+\/file$/;
 
@@ -24,8 +24,19 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-    // Take control of all open clients.
-    event.waitUntil(self.clients.claim());
+    // Take control of all open clients and wipe any old-version caches.
+    // Bumping CACHE_NAME on every release is the easiest way to invalidate
+    // cached PDFs if the format ever changes; the new SW will start with
+    // a clean cache.
+    event.waitUntil((async () => {
+        const keys = await caches.keys();
+        await Promise.all(
+            keys
+                .filter((k) => k.startsWith("pdf-reader-pdfs-") && k !== CACHE_NAME)
+                .map((k) => caches.delete(k))
+        );
+        await self.clients.claim();
+    })());
 });
 
 async function trimCache(cache) {
