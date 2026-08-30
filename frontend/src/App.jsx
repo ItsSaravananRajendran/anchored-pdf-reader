@@ -61,9 +61,15 @@ function Shell() {
         setMessages, setSessionLabel,
         onBeforeLoad: () => { dispatch({ type: "PDF_CLEAR" }); clearDocumentState(); },
     });
-    const scale = useFitWidthScale({ zoomMode, pdfDoc: loader.pdfDoc, scrollContainerRef });
+    // displayScale = the zoom level the user actually sees (driven by zoomMode).
+    // sourceScale = the constant the bitmap is rasterized at. Each page is
+    // rendered once at sourceScale, then displayed at displayScale via CSS
+    // transform — so zoom changes are instant and zoom-in past sourceScale
+    // only re-renders if the user explicitly wants a sharper bitmap.
+    const displayScale = useFitWidthScale({ zoomMode, pdfDoc: loader.pdfDoc, scrollContainerRef });
+    const sourceScale = 2.0;
     const virtualPages = useVirtualPages({
-        pdfDoc: loader.pdfDoc, scale, scrollContainerRef,
+        pdfDoc: loader.pdfDoc, displayScale, sourceScale, scrollContainerRef,
         pageCount: pdfInfo?.page_count || 0,
         onStatusChange: ({ rendered }) => setRenderedPages(rendered),
     });
@@ -108,7 +114,8 @@ function Shell() {
                 {pdfInfo && (
                     <div className="reader-chat-grid" style={{ gridTemplateColumns: `1fr 6px ${chatWidth}px` }}>
                         <Reader
-                            pdfInfo={pdfInfo} pdfDoc={loader.pdfDoc} scale={scale}
+                            pdfInfo={pdfInfo} pdfDoc={loader.pdfDoc}
+                            displayScale={displayScale} sourceScale={sourceScale}
                             scrollContainerRef={scrollContainerRef}
                             pages={virtualPages.pages} setPageEntry={virtualPages.setPageEntry}
                             scheduleRender={virtualPages.scheduleRender}
@@ -128,7 +135,7 @@ function Shell() {
                 )}
             </div>
             <StatusBar pdfInfo={pdfInfo} renderedPages={renderedPages}
-                pageCount={pdfInfo?.page_count || 0} scale={scale} />
+                pageCount={pdfInfo?.page_count || 0} scale={displayScale} />
         </div>
     );
 }

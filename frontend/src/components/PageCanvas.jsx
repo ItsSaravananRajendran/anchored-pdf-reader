@@ -6,6 +6,16 @@
  * --wrap-w CSS variables so the scroll container has the right
  * scrollHeight before the page actually renders.
  *
+ * Render-once-and-scale strategy:
+ *   The page bitmap is rendered once at a fixed sourceScale (a constant
+ *   high-resolution value, e.g. 2.0). Zoom changes are applied via CSS
+ *   `transform: scale(displayScale / sourceScale)` on the canvas, which
+ *   is GPU-composited and free — no PDF.js re-render. Wrap dimensions
+ *   (--wrap-w / --wrap-h) follow displayScale so the scrollbar stays
+ *   correct. The overlay canvas is rendered at the displayScale size
+ *   (not the sourceScale size) so drag rects and anchor highlights
+ *   stay aligned with the visible page under any zoom level.
+ *
  * Performance notes:
  *  - Each wrap in the DOM keeps two canvases alive (page + overlay).
  *    For a 500-page book that's 1000 canvases total. Most wraps don't
@@ -22,6 +32,8 @@ import { useDragSelection } from "../hooks/useDragSelection";
 export default function PageCanvas({
     pageNum,
     width,
+    displayScale,
+    sourceScale,
     pageEntry,
     setPageEntry,
     scheduleRender,
@@ -49,18 +61,32 @@ export default function PageCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageNum]);
 
-    const naturalH = width * (792 / 612); // Letter aspect ratio fallback
-    const height = pageEntry?.viewport?.height || naturalH;
-    const W = pageEntry?.viewport?.width || width;
-    const H = pageEntry?.viewport?.height || height;
+    // `width` is the natural CSS width at scale=1.0 (612pt * 96/72 = 816 for Letter).
+    // `naturalH` is the same for the height (Letter is 792pt). The bitmap is
+    // rasterized at sourceScale (a constant — the highest quality we'll display).
+    // The visible canvas size = sourceSize * (displayScale / sourceScale) — i.e.
+    // when displayScale < sourceScale, the bitmap is downscaled by the browser
+    // (GPU-composited, free); when displayScale > sourceScale, the bitmap is
+    // upscaled (still GPU-composited, slight blur). Wrap dimensions follow
+    // displayScale so the scrollbar positions correctly.
+    const naturalH = width * (792 / 612);
+    const height = pageEntry?.viewport?.height ? pageEntry.viewport.height / sourceScale : naturalH;
+    // Wrap dimensions (used for layout / scrollbar).
+    const W = width * displayScale;
+    const H = height * displayScale;
+    // Canvas bitmap dimensions — rendered at sourceScale, displayed at the
+    // wrap's display size. The browser handles the scale factor.
+    const sourceW = width * sourceScale;
+    const sourceH = height * sourceScale;
+    const canvasScale = displayScale / sourceScale;
 
-    // Resize the overlay canvas to match the rendered viewport. Only runs
-    // when size changes (not on every render).
+    // Resize the overlay canvas to match the DISPLAY size (not the source
+    // bitmap size). Overlay bitmap coords are in display CSS px, so drag
+    // rects and anchor highlights stay aligned with what the user sees
+    // regardless of zoom level.
     useEffect(() => {
         const overlay = overlayRef.current;
         if (!overlay) return;
-        // DPR is fixed at 1 in _renderOne (see useVirtualPages). Mirror that
-        // here so the overlay bitmap matches the page bitmap pixel-for-pixel.
         const dpr = 1;
         const tw = Math.round(W * dpr);
         const th = Math.round(H * dpr);
@@ -78,17 +104,13 @@ export default function PageCanvas({
         [historicalAnchors, pageNum],
     );
 
-    // Draw historical anchors. Skips entirely if:
-    //  - overlay not ready
-    //  - no live drag in progress (drag effect owns the overlay then)
-    //  - page hasn't rendered (we have no exact viewport to scale into)
-    //  - page has no anchors (the common case)
+    // Draw historical anchors. Overlay is at display size, so rect coords
+    // are fractions of display dimensions — the setTransform stays identity.
     useEffect(() => {
         const overlay = overlayRef.current;
         if (!overlay || !pageEntry?.viewport) return;
         if (pageAnchors.length === 0) return;
         const ctx = overlay.getContext("2d");
-        // Overlay bitmap is rendered at DPR=1 (see _renderOne in useVirtualPages).
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, W, H);
         for (const a of pageAnchors) {
@@ -110,7 +132,6 @@ export default function PageCanvas({
         if (!overlay) return undefined;
         const ctx = overlay.getContext("2d");
         const unsubscribe = drag.subscribe((rect) => {
-            // DPR=1 (see _renderOne in useVirtualPages).
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, W, H);
             if (rect) {
@@ -125,8 +146,19 @@ export default function PageCanvas({
     }, [W, H, drag]);
 
     const wrapStyle = {
-        "--wrap-w": width + "px",
-        "--wrap-h": height + "px",
+        "--wrap-w": W + "px",
+        "--wrap-h": H + "px",
+    };
+    // Canvas fills the wrap's display dimensions. The bitmap is rasterized
+    // at sourceScale (canvas.width/height = sourceW/H, set by _renderOne),
+    // but the CSS width/height is 100% of the wrap, so the bitmap is
+    // scaled to fit by the browser (GPU-accelerated, free). No CSS
+    // transform needed — that approach breaks layout because transform
+    // doesn't affect the element's layout box.
+    const canvasStyle = {
+        width: "100%",
+        height: "100%",
+        display: "block",
     };
 
     return (
@@ -136,10 +168,11 @@ export default function PageCanvas({
             data-page={pageNum}
             style={wrapStyle}
         >
-            <canvas ref={canvasRef} className="pdf-page-canvas" />
+            <canvas ref={canvasRef} className="pdf-page-canvas" style={canvasStyle} />
             <canvas
                 ref={overlayRef}
                 className="pdf-page-overlay"
+                style={canvasStyle}
                 onPointerDown={drag.onPointerDown}
                 onPointerMove={drag.onPointerMove}
                 onPointerUp={drag.onPointerUp}

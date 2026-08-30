@@ -30,12 +30,18 @@ const _tasksByPageNum = new Map();
 // a render finishes, so evictIfOverBudget has accurate recency info.
 const _lastUsedByPage = new Map();
 
-export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, onStatusChange }) {
+export function useVirtualPages({ pdfDoc, displayScale, sourceScale, scrollContainerRef, pageCount, onStatusChange }) {
     const [pages, setPages] = useState({});
     const pagesRef = useRef(pages);
     pagesRef.current = pages;
-    const scaleRef = useRef(scale);
-    scaleRef.current = scale;
+    // The bitmap is rendered at sourceScale (a constant — the page is decoded
+    // once at the highest quality needed). The visible canvas uses CSS
+    // transform: scale(displayScale / sourceScale) so zooming is instant.
+    // We still track displayScale in a ref so scheduleRender's "already
+    // rendered at this scale" check uses displayScale as the key — when
+    // displayScale changes (zoom mode switch), we re-render.
+    const scaleRef = useRef(displayScale);
+    scaleRef.current = displayScale;
     const pdfDocRef = useRef(pdfDoc);
     pdfDocRef.current = pdfDoc;
 
@@ -51,7 +57,9 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         if (!scroll) return [];
         const top = scroll.scrollTop - 2000;
         const bottom = scroll.scrollTop + scroll.clientHeight + 2000;
-        const pageH = estimatePageHeightCss(scaleRef.current);
+        // Page height estimate uses displayScale so the wrap heights match
+        // the scrollbar's interpretation of "what page is at this offset".
+        const pageH = estimatePageHeightCss(displayScale);
         // Iterate the full page list (cheap — a 5000-page book is still
         // well under a millisecond for this loop). The earlier 40-page
         // cap blocked renders for page 41+.
@@ -148,7 +156,7 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         while (_activeRenders < MAX_CONCURRENT_RENDERS && _queue.length > 0) {
             const job = _queue.shift();
             _activeRenders += 1;
-            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, _evictSoon, pdfDocRef)
+            _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, _evictSoon, pdfDocRef, sourceScale)
                 .finally(() => {
                     _activeRenders -= 1;
                     _drain();
@@ -227,6 +235,13 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
     // updates to the new size — leaving the page drawn at the old scale
     // inside a wrap that's a different size, with stale white pixels
     // where the canvas didn't extend.
+    // When the display scale changes (zoom mode switch), invalidate the render
+    // cache and re-render every page in viewport. With the render-once-and-
+    // scale strategy, the bitmap is rasterized at sourceScale but the *visible*
+    // canvas is shown at displayScale via CSS transform. We still re-decode
+    // at the new displayScale so the bitmap resolution matches the new zoom
+    // level — zooming IN past sourceScale needs a sharper bitmap, zooming OUT
+    // can use a smaller one to save memory.
     useEffect(() => {
         if (!pdfDoc) return;
         // Invalidate the cached viewport set — scale changed, so page-height
@@ -255,34 +270,39 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
             }
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scale]);
+    }, [displayScale]);
 
     return { pages, setPageEntry, scheduleRender, pagesInViewport };
 }
 
-async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef) {
+async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evictIfOverBudget_soon, pdfDocRef, sourceScale) {
     const { pageNum, canvas, overlay } = job;
-    const scale = scaleRef.current;
+    // Render the bitmap at sourceScale (a constant — the page is decoded
+    // once at the highest quality needed). The visible canvas uses CSS
+    // width: 100% / height: 100% in PageCanvas, so the browser handles
+    // the scale-up / scale-down to fit the wrap's display size. This is
+    // GPU-composited and free — zoom changes no longer trigger a re-render.
+    const scale = sourceScale;
     const pdfDoc = pdfDocRef.current;
     try {
         const pdfjs = await getPdfJs();
         if (!pdfDoc) throw new Error("no pdfDoc");
         const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale, rotation: 0 });
-        // Cap DPR at 1: a 2× canvas bitmap is 4× the pixels of a 1× one
-        // and the visible difference on a text-heavy PDF is negligible.
-        // The CSS display size is still controlled by viewport.width, so
-        // the page renders at the same on-screen size — just at non-retina
-        // resolution. ~4× faster PDF.js rasterization.
+        // Cap DPR at 1 (see previous commit) — 4× fewer pixels for the
+        // same on-screen size.
         const dpr = 1;
         canvas.width = viewport.width * dpr;
         canvas.height = viewport.height * dpr;
-        canvas.style.width = viewport.width + "px";
-        canvas.style.height = viewport.height + "px";
+        // Don't set canvas.style.width/height here — PageCanvas owns the
+        // CSS display size (width: 100% of the wrap). Setting it here
+        // would override that and break the fit-to-wrap scaling.
         overlay.width = canvas.width;
         overlay.height = canvas.height;
-        overlay.style.width = canvas.style.width;
-        overlay.style.height = canvas.style.height;
+        // Overlay's CSS size is also 100% of wrap (set in PageCanvas style).
+        // We DO need to update overlay bitmap dimensions if they changed
+        // (the canvas resize itself doesn't change bitmap dimensions — only
+        // explicit .width/.height do that).
         const ctx = canvas.getContext("2d");
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         const task = page.render({ canvasContext: ctx, viewport });
