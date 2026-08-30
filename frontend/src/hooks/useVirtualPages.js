@@ -269,7 +269,12 @@ async function _renderOne(job, scaleRef, pagesRef, setPages, onStatusChange, evi
         if (!pdfDoc) throw new Error("no pdfDoc");
         const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale, rotation: 0 });
-        const dpr = window.devicePixelRatio || 1;
+        // Cap DPR at 1: a 2× canvas bitmap is 4× the pixels of a 1× one
+        // and the visible difference on a text-heavy PDF is negligible.
+        // The CSS display size is still controlled by viewport.width, so
+        // the page renders at the same on-screen size — just at non-retina
+        // resolution. ~4× faster PDF.js rasterization.
+        const dpr = 1;
         canvas.width = viewport.width * dpr;
         canvas.height = viewport.height * dpr;
         canvas.style.width = viewport.width + "px";

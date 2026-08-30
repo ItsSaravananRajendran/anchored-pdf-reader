@@ -14,7 +14,7 @@ export function useFitWidthScale({ zoomMode, pdfDoc, scrollContainerRef }) {
     useEffect(() => {
         let cancelled = false;
         let resizeObserver = null;
-        let rafHandle = null;
+        let rafHandles = [];
 
         async function compute() {
             if (zoomMode === "fit-width") {
@@ -32,24 +32,33 @@ export function useFitWidthScale({ zoomMode, pdfDoc, scrollContainerRef }) {
             }
         }
 
-        // Defer initial compute one frame so the layout has actually settled
-        // before we measure the scroll container. Without this, pdfDoc.getPage()
-        // can resolve against a clientWidth that's still pre-layout (the column
-        // is rendering at a fraction of its eventual width).
-        rafHandle = requestAnimationFrame(() => {
-            if (cancelled) return;
-            compute();
+        // Wait for two rAFs after mount before measuring the scroll container.
+        // One frame is sometimes not enough — React's first commit paints
+        // synchronously, but grid/flex column widths can settle a frame
+        // later on Safari/Firefox. Two rAFs guarantees the layout is stable
+        // before we read clientWidth. Without this, the first fit-width
+        // scale was computed against a pre-layout width and produced a
+        // ~0.8× scale instead of ~2× — every page then had to be cancelled
+        // and re-rendered.
+        function startObserve() {
             if (zoomMode === "fit-width" && scrollContainerRef.current) {
                 resizeObserver = new ResizeObserver(() => {
                     if (!cancelled) compute();
                 });
                 resizeObserver.observe(scrollContainerRef.current);
             }
-        });
+        }
+        rafHandles.push(requestAnimationFrame(() => {
+            rafHandles.push(requestAnimationFrame(() => {
+                if (cancelled) return;
+                compute();
+                startObserve();
+            }));
+        }));
 
         return () => {
             cancelled = true;
-            if (rafHandle) cancelAnimationFrame(rafHandle);
+            for (const h of rafHandles) cancelAnimationFrame(h);
             if (resizeObserver) resizeObserver.disconnect();
         };
     }, [zoomMode, pdfDoc, scrollContainerRef]);

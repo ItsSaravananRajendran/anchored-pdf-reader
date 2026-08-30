@@ -59,7 +59,9 @@ export default function PageCanvas({
     useEffect(() => {
         const overlay = overlayRef.current;
         if (!overlay) return;
-        const dpr = window.devicePixelRatio || 1;
+        // DPR is fixed at 1 in _renderOne (see useVirtualPages). Mirror that
+        // here so the overlay bitmap matches the page bitmap pixel-for-pixel.
+        const dpr = 1;
         const tw = Math.round(W * dpr);
         const th = Math.round(H * dpr);
         if (overlay.width !== tw || overlay.height !== th) {
@@ -86,8 +88,8 @@ export default function PageCanvas({
         if (!overlay || !pageEntry?.viewport) return;
         if (pageAnchors.length === 0) return;
         const ctx = overlay.getContext("2d");
-        const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Overlay bitmap is rendered at DPR=1 (see _renderOne in useVirtualPages).
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, W, H);
         for (const a of pageAnchors) {
             const r = a.anchor_rect;
@@ -107,9 +109,9 @@ export default function PageCanvas({
         const overlay = overlayRef.current;
         if (!overlay) return undefined;
         const ctx = overlay.getContext("2d");
-        const dpr = window.devicePixelRatio || 1;
         const unsubscribe = drag.subscribe((rect) => {
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            // DPR=1 (see _renderOne in useVirtualPages).
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, W, H);
             if (rect) {
                 ctx.strokeStyle = "rgba(88,166,255,0.95)";
