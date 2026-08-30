@@ -1,23 +1,24 @@
 /**
- * AnchorChip — a single anchor in the sidebar list. Click to load the
- * session it came from. Hover reveals a delete (×) button.
+ * AnchorChip — one row in the sidebar list of conversation threads.
  *
- * Layout: [page-badge] [text (Q/A + truncated message)] [delete on hover]
- * No thumbnail — the user wanted a clean text-only row.
+ * One row per session. Shows:
+ *   - the page badge (p.N)
+ *   - the first user question of the conversation
+ *   - a small follow-up count badge (e.g. "+2" for 2 follow-up messages)
+ *   - the × delete button on hover
+ *
+ * Click loads the session into the chat and scrolls to the anchor.
  */
 
 import { useState } from "react";
 import { truncate } from "../lib/utils";
 
-const ROLE_LABEL = { user: "Q", assistant: "A" };
-const ROLE_CLASS = { user: "user", assistant: "assistant" };
-
-export default function AnchorChip({ anchor, onClick, onDelete }) {
+export default function AnchorChip({ anchor, followUpCount = 0, onClick, onDelete }) {
     const [hovered, setHovered] = useState(false);
 
     return (
         <div
-            className={`anchor-row ${hovered ? "hovered" : ""} ${ROLE_CLASS[anchor.role] || ""}`}
+            className={`anchor-row ${hovered ? "hovered" : ""}`}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             onClick={() => onClick(anchor)}
@@ -32,23 +33,24 @@ export default function AnchorChip({ anchor, onClick, onDelete }) {
         >
             <span className="page-badge">p.{anchor.anchor_page}</span>
             <div className="anchor-text">
-                <span className={`anchor-role ${ROLE_CLASS[anchor.role] || ""}`}>
-                    {ROLE_LABEL[anchor.role] || "·"}
-                </span>
-                {" "}
                 {truncate(anchor.text || "(no text)", 60)}
             </div>
+            {followUpCount > 0 && (
+                <span className="anchor-followups" title={`${followUpCount} follow-up message${followUpCount === 1 ? "" : "s"}`}>
+                    +{followUpCount}
+                </span>
+            )}
             {onDelete && (
                 <button
                     className="anchor-delete"
                     onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm("Delete this question and its answer? This cannot be undone.")) {
+                        if (confirm("Delete this conversation thread and all its messages? This cannot be undone.")) {
                             onDelete(anchor);
                         }
                     }}
-                    aria-label="Delete anchor"
-                    title="Delete anchor"
+                    aria-label="Delete conversation thread"
+                    title="Delete conversation thread"
                 >
                     ×
                 </button>

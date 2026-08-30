@@ -66,13 +66,15 @@ export function useAnchorActions({
     }, [dispatch, setMessages, setSessionLabel, pageJump]);
 
     const deleteAnchor = useCallback(async (anchor) => {
+        // Anchor chip rows now represent a whole conversation thread
+        // (one row per session). Deleting the row deletes the session
+        // and every message in it (user + assistant follow-ups).
         const pdfHash = state.pdfInfo?.pdf_hash;
+        const sessionId = anchor?.session_id;
+        if (!sessionId) return;
         try {
-            await api.deleteAnchor(anchor.message_id);
-            setMessages((m) => m.filter((msg) => !(
-                msg.anchor_page === anchor.anchor_page
-                && JSON.stringify(msg.anchor_rect) === JSON.stringify(anchor.anchor_rect)
-            )));
+            await api.deleteSession(sessionId);
+            setMessages([]);
             if (pdfHash) await loader.refreshBookAnchors(pdfHash);
         } catch (e) { console.error("[useAnchorActions] deleteAnchor failed:", e); }
     }, [state.pdfInfo, setMessages, loader]);
