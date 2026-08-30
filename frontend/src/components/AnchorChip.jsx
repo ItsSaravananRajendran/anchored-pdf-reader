@@ -1,34 +1,42 @@
 /**
- * AnchorChip — small rectangle thumbnail + page badge. Click to load the
+ * AnchorChip — a single anchor in the sidebar list. Click to load the
  * session it came from. Hover reveals a delete (×) button.
+ *
+ * Layout: [page-badge] [text (Q/A + truncated message)] [delete on hover]
+ * No thumbnail — the user wanted a clean text-only row.
  */
 
 import { useState } from "react";
-import { rectsEqual } from "../lib/rect";
 import { truncate } from "../lib/utils";
+
+const ROLE_LABEL = { user: "Q", assistant: "A" };
+const ROLE_CLASS = { user: "user", assistant: "assistant" };
 
 export default function AnchorChip({ anchor, onClick, onDelete }) {
     const [hovered, setHovered] = useState(false);
-    const style = {
-        left: `${anchor.anchor_rect.x * 100}%`,
-        top: `${anchor.anchor_rect.y * 100}%`,
-        width: `${anchor.anchor_rect.w * 100}%`,
-        height: `${anchor.anchor_rect.h * 100}%`,
-    };
 
     return (
         <div
-            className={`anchor-row ${hovered ? "hovered" : ""}`}
+            className={`anchor-row ${hovered ? "hovered" : ""} ${ROLE_CLASS[anchor.role] || ""}`}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             onClick={() => onClick(anchor)}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onClick(anchor);
+                }
+            }}
         >
-            <div className="anchor-thumb" style={style} />
             <span className="page-badge">p.{anchor.anchor_page}</span>
             <div className="anchor-text">
-                {anchor.role === "user" ? "Q:" : "A:"} {truncate(anchor.text || "(no text)", 60)}
+                <span className={`anchor-role ${ROLE_CLASS[anchor.role] || ""}`}>
+                    {ROLE_LABEL[anchor.role] || "·"}
+                </span>
+                {" "}
+                {truncate(anchor.text || "(no text)", 60)}
             </div>
             {onDelete && (
                 <button

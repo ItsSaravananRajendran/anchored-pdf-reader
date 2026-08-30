@@ -281,7 +281,7 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
 
 .anchor-row {
     display: grid;
-    grid-template-columns: 32px 1fr auto;
+    grid-template-columns: 36px 1fr 22px;
     align-items: center;
     gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-4);
@@ -290,40 +290,6 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
     font-size: var(--fs-sm);
 }
 .anchor-row:hover { background: var(--accent-soft); }
-.anchor-thumb {
-    position: relative;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background:
-        linear-gradient(to bottom right,
-            transparent 0%, transparent 100%);
-    background-color: var(--bg-elev-2);
-    overflow: hidden;
-}
-/* Show the rect as a highlighted region inside a tiny page preview */
-.anchor-thumb::before {
-    content: '';
-    position: absolute;
-    /* The chip JS already sets left/top/width/height as % of the wrap */
-    inset: 0;
-    background: var(--accent-soft);
-    border: 1px solid var(--accent);
-    border-radius: 1px;
-}
-.anchor-thumb::after {
-    /* Faint page-like background to suggest the page under the chip */
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        linear-gradient(to bottom,
-            rgba(255,255,255,0.0) 0%,
-            rgba(255,255,255,0.0) 80%,
-            rgba(255,255,255,0.5) 100%);
-    pointer-events: none;
-}
 .anchor-row .page-badge {
     background: var(--bg-elev-2);
     color: var(--fg-secondary);
@@ -332,7 +298,6 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
     font-size: var(--fs-xs);
     font-family: var(--font-mono);
     text-align: center;
-    min-width: 32px;
 }
 .anchor-text {
     color: var(--fg-secondary);
@@ -340,7 +305,18 @@ body.is-resizing { cursor: col-resize !important; user-select: none; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.4;
 }
+.anchor-role {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    margin-right: 4px;
+    width: 14px;
+    text-align: center;
+}
+.anchor-role.user { color: rgba(210, 153, 34, 0.95); }
+.anchor-role.assistant { color: rgba(63, 185, 80, 0.95); }
 .anchor-delete {
     background: transparent;
     color: var(--fg-tertiary);
