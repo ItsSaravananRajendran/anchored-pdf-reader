@@ -148,6 +148,21 @@ def list_messages(session_id: str):
         ).fetchall()
 
 
+def last_message_with_anchor(session_id: str):
+    """Return the most recent message in the session that carries an anchor.
+
+    Used by the chat endpoint to inherit an anchor for follow-up messages
+    when the client doesn't include one. Returns None if no prior message
+    has an anchor (e.g. first message in a new session).
+    """
+    with conn() as c:
+        return c.execute(
+            "SELECT * FROM message WHERE session_id=? AND anchor_page IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+
+
 def delete_message(message_id: str) -> int:
     """Delete a single message by id. Returns the number of rows deleted."""
     with conn() as c:

@@ -16,6 +16,7 @@ from .db_repos import (
     get_page_text,
     get_pdf,
     get_session,
+    last_message_with_anchor,
     list_anchors_for_pdf,
     list_messages,
     list_pdfs,

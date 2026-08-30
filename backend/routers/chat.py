@@ -33,15 +33,32 @@ async def chat(req: ChatRequest):
     if pdf is None:
         raise HTTPException(404, "pdf for session not found")
 
+    # Resolve the anchor for this message. The first message in a session
+    # must include one (the user always anchors a chat to a PDF region).
+    # Follow-up messages can omit the anchor — we inherit it from the
+    # most recent prior message in the same session so the chat stays
+    # grounded in the same region of the PDF.
+    if req.anchor is None:
+        prior = db.last_message_with_anchor(req.session_id)
+        if prior is None:
+            raise HTTPException(400, "first message in a session requires an anchor")
+        anchor_page = prior["anchor_page"]
+        anchor_rect = json.loads(prior["anchor_rect"])
+        anchor_rotation = prior["anchor_rotation"] or 0
+    else:
+        anchor_page = req.anchor.page
+        anchor_rect = req.anchor.rect.model_dump()
+        anchor_rotation = req.anchor.rotation
+
     # 1. Persist the user message immediately
     db.add_message(
         msg_id=req.message_id,
         session_id=req.session_id,
         role="user",
         text=req.text,
-        anchor_page=req.anchor.page,
-        anchor_rect=req.anchor.rect.model_dump(),
-        anchor_rotation=req.anchor.rotation,
+        anchor_page=anchor_page,
+        anchor_rect=anchor_rect,
+        anchor_rotation=anchor_rotation,
         status="complete",
     )
 
@@ -52,16 +69,16 @@ async def chat(req: ChatRequest):
         session_id=req.session_id,
         role="assistant",
         text="",
-        anchor_page=req.anchor.page,
-        anchor_rect=req.anchor.rect.model_dump(),
-        anchor_rotation=req.anchor.rotation,
+        anchor_page=anchor_page,
+        anchor_rect=anchor_rect,
+        anchor_rotation=anchor_rotation,
         status="streaming",
     )
 
     # 3. Gather context: page text + rectangle crop
     try:
         page_text, page_image_b64 = await _prepare_context(
-            pdf["path"], req.anchor.page, req.anchor.rect.model_dump(),
+            pdf["path"], anchor_page, anchor_rect,
         )
     except Exception as exc:
         db.update_message_text(

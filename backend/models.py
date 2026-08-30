@@ -58,4 +58,7 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     message_id: str = Field(..., min_length=1)
     text: str = Field(..., min_length=1, max_length=8000)
-    anchor: AnchorModel
+    # Anchor is required for the first message in a session but optional
+    # for follow-ups — when omitted, the backend inherits the anchor
+    # from the most recent message in the same session.
+    anchor: Optional[AnchorModel] = None

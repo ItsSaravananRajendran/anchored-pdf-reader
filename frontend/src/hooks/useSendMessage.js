@@ -14,21 +14,37 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
     const { dispatch } = useApp();
 
     const send = useCallback(async (text) => {
-        if (!pendingAnchor || !sessionId) return;
+        // First message in a new session requires an anchor (we always
+        // anchor a chat to a specific PDF region). Follow-up messages
+        // in an active session don't need a fresh anchor — the user is
+        // continuing the same conversation.
+        const isFirstMessage = !!pendingAnchor;
+        if (!sessionId) return;
+        if (isFirstMessage && !pendingAnchor) return;
         const userMsgId = uuid();
         const assistantMsgId = uuid();
 
-        // Optimistically append
-        const userMsg = {
-            id: userMsgId,
-            role: "user",
-            text,
-            anchor_page: pendingAnchor.page,
-            anchor_rect: pendingAnchor.rect,
-            thumbDataUrl: pendingAnchor.thumbDataUrl,
-            status: "complete",
-            created_at: Date.now(),
-        };
+        // For the first message, anchor metadata travels with it. For
+        // follow-ups, anchor stays null on the message and we let the
+        // backend inherit the session's anchor context.
+        const userMsg = isFirstMessage
+            ? {
+                id: userMsgId,
+                role: "user",
+                text,
+                anchor_page: pendingAnchor.page,
+                anchor_rect: pendingAnchor.rect,
+                thumbDataUrl: pendingAnchor.thumbDataUrl,
+                status: "complete",
+                created_at: Date.now(),
+            }
+            : {
+                id: userMsgId,
+                role: "user",
+                text,
+                status: "complete",
+                created_at: Date.now(),
+            };
         const assistantMsg = {
             id: assistantMsgId,
             role: "assistant",
@@ -37,7 +53,7 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
             created_at: Date.now(),
         };
         setMessages((m) => [...m, userMsg, assistantMsg]);
-        dispatch({ type: "PENDING_ANCHOR_CLEAR" });
+        if (isFirstMessage) dispatch({ type: "PENDING_ANCHOR_CLEAR" });
 
         const controller = new AbortController();
         try {
@@ -45,11 +61,13 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
                 sessionId,
                 messageId: userMsgId,
                 text,
-                anchor: {
-                    page: pendingAnchor.page,
-                    rect: pendingAnchor.rect,
-                    rotation: pendingAnchor.rotation || 0,
-                },
+                anchor: isFirstMessage
+                    ? {
+                        page: pendingAnchor.page,
+                        rect: pendingAnchor.rect,
+                        rotation: pendingAnchor.rotation || 0,
+                    }
+                    : null,
                 signal: controller.signal,
                 onToken: (chunk, accumulated) => {
                     setMessages((m) => m.map((msg) => (

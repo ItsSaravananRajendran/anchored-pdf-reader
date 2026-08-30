@@ -55,10 +55,17 @@ export default function ChatPanel({
 
     function doSend() {
         const t = text.trim();
-        if (!t || !pendingAnchor) return;
+        // First message in a session requires a pending anchor (we always
+        // anchor a chat to a PDF region). Follow-up messages in an active
+        // session don't need a fresh anchor — the user is continuing the
+        // conversation.
+        if (!t) return;
+        if (!pendingAnchor && messages.length === 0) return;
         onSend(t);
         setText("");
     }
+
+    const canSend = !!pendingAnchor || messages.length > 0;
 
     return (
         <aside className="chat-panel">
@@ -99,6 +106,8 @@ export default function ChatPanel({
                         Anchor on p.{pendingAnchor.page}:&nbsp;
                         {(pendingAnchor.rect.w * 100).toFixed(0)}% × {(pendingAnchor.rect.h * 100).toFixed(0)}%
                     </div>
+                ) : messages.length > 0 ? (
+                    <div className="pending-empty">Continuing conversation — drag on a page to start a new anchor.</div>
                 ) : (
                     <div className="pending-empty">Drag on a page to set an anchor.</div>
                 )}
@@ -112,14 +121,14 @@ export default function ChatPanel({
                             doSend();
                         }
                     }}
-                    placeholder={pendingAnchor ? "Ask about this region…" : "Drag on a page first."}
+                    placeholder={canSend ? (pendingAnchor ? "Ask about this region…" : "Continue the conversation…") : "Drag on a page first."}
                     rows={3}
-                    disabled={!pendingAnchor}
+                    disabled={!canSend}
                 />
                 <button
                     className="btn primary"
                     onClick={doSend}
-                    disabled={!pendingAnchor || !text.trim()}
+                    disabled={!canSend || !text.trim()}
                 >
                     Send
                 </button>
