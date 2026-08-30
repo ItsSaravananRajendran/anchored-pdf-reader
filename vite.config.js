@@ -32,8 +32,8 @@ export default defineConfig({
         port: 5173,
         // Proxy /api and /static to the FastAPI server during development.
         proxy: {
-            "/api": "http://127.0.0.1:8910",
-            "/static": "http://127.0.0.1:8910",
+            "/api": "http://100.86.17.65:8910",
+            "/static": "http://100.86.17.65:8910",
         },
     },
 });

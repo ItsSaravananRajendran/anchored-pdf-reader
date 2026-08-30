@@ -220,6 +220,43 @@ export function useVirtualPages({ pdfDoc, scale, scrollContainerRef, pageCount, 
         }
     }, [pdfDoc]);
 
+    // When the scale changes (e.g. switching zoom modes, or fit-width
+    // recomputing on container resize), invalidate the render cache and
+    // re-render every page in viewport. Without this, already-rendered
+    // pages keep their old canvas dimensions while the page wrap div
+    // updates to the new size — leaving the page drawn at the old scale
+    // inside a wrap that's a different size, with stale white pixels
+    // where the canvas didn't extend.
+    useEffect(() => {
+        if (!pdfDoc) return;
+        // Invalidate the cached viewport set — scale changed, so page-height
+        // estimates differ and the previously-cached viewport membership is stale.
+        _viewportSetRef.current.clear();
+        for (const task of _tasksByPageNum.values()) {
+            try { task.cancel(); } catch { /* ignore */ }
+        }
+        _tasksByPageNum.clear();
+        setPages((prev) => {
+            const next = {};
+            for (const k of Object.keys(prev)) {
+                // Reset rendering=true too, since we just cancelled the
+                // in-flight task. Without this, scheduleRender short-circuits
+                // and the new-scale render never fires.
+                next[k] = { ...prev[k], rendered: false, renderedAt: null, rendering: false };
+            }
+            return next;
+        });
+        queueMicrotask(() => {
+            for (const p of pagesInViewport()) {
+                const entry = pagesRef.current[p];
+                if (entry?.canvas && entry?.overlay) {
+                    scheduleRender(p, entry.canvas, entry.overlay);
+                }
+            }
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scale]);
+
     return { pages, setPageEntry, scheduleRender, pagesInViewport };
 }
 

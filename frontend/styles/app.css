@@ -205,6 +205,8 @@ body {
     min-height: calc(var(--wrap-h, 1056px) + 8px);
     margin: 4px auto;
     width: var(--wrap-w, 612px);
+    max-width: 100%;
+    box-sizing: border-box;
 }
 .pdf-page-canvas { display: block; }
 .pdf-page-overlay {

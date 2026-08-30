@@ -43,7 +43,7 @@ function Shell() {
     const errorMessage = useStateSelector((s) => s.errorMessage);
 
     const [urlInput, setUrlInput] = useState("");
-    const [zoomMode, setZoomMode] = useState("1.0");
+    const [zoomMode, setZoomMode] = useState("fit-width");
     const [chatWidth, setChatWidth] = useState(420);
     const [currentPage, setCurrentPage] = useState(1);
     const [messages, setMessages] = useState([]);

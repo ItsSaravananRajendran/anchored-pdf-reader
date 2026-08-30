@@ -4,11 +4,11 @@
 
 :root {
     /* Surfaces (dark) */
-    --bg: #0d1117;
+    --bg: #000000;
     --bg-elev-1: #161b22;
     --bg-elev-2: #1c2129;
     --bg-elev-3: #22272f;
-    --bg-overlay: rgba(13, 17, 23, 0.85);
+    --bg-overlay: rgba(0, 0, 0, 0.85);
 
     /* Borders (dark) */
     --border-subtle: #21262d;
@@ -87,32 +87,34 @@
 
 @media (prefers-color-scheme: light) {
     :root {
-        --bg: #ffffff;
-        --bg-elev-1: #f6f8fa;
-        --bg-elev-2: #eaeef2;
-        --bg-elev-3: #d0d7de;
-        --bg-overlay: rgba(255, 255, 255, 0.85);
+        /* Keep dark surface even in light OS mode — the reader is meant
+           to be a focused reading environment. */
+        --bg: #000000;
+        --bg-elev-1: #161b22;
+        --bg-elev-2: #1c2129;
+        --bg-elev-3: #22272f;
+        --bg-overlay: rgba(0, 0, 0, 0.85);
 
-        --border-subtle: #e1e4e8;
-        --border-default: #d0d7de;
-        --border-strong: #afb8c1;
+        --border-subtle: #21262d;
+        --border-default: #30363d;
+        --border-strong: #484f58;
 
-        --fg: #1f2328;
-        --fg-secondary: #424a53;
-        --fg-tertiary: #656d76;
-        --fg-dim: #8c959f;
+        --fg: #e6edf3;
+        --fg-secondary: #adbac7;
+        --fg-tertiary: #768390;
+        --fg-dim: #545d68;
 
-        --accent: #0969da;
-        --accent-strong: #0550ae;
-        --accent-soft: rgba(9, 105, 218, 0.10);
+        --accent: #58a6ff;
+        --accent-strong: #1f6feb;
+        --accent-soft: rgba(56, 139, 253, 0.12);
         --accent-fg: #ffffff;
 
-        --success: #1a7f37;
-        --success-soft: rgba(26, 127, 55, 0.10);
-        --warning: #9a6700;
-        --warning-soft: rgba(154, 103, 0, 0.10);
-        --danger: #cf222e;
-        --danger-soft: rgba(207, 34, 46, 0.10);
+        --success: #3fb950;
+        --success-soft: rgba(63, 185, 80, 0.12);
+        --warning: #d29922;
+        --warning-soft: rgba(210, 153, 34, 0.12);
+        --danger: #f85149;
+        --danger-soft: rgba(248, 81, 73, 0.12);
 
         --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
         --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.10);
