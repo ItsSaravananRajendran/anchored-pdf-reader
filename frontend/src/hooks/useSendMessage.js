@@ -69,9 +69,13 @@ export function useSendMessage({ pendingAnchor, sessionId, setMessages, onAfterS
                     }
                     : null,
                 signal: controller.signal,
-                onToken: (chunk, accumulated) => {
+                onToken: (chunk) => {
+                    // streamChat sends one token at a time. Accumulate
+                    // locally so the bubble shows the running reply.
                     setMessages((m) => m.map((msg) => (
-                        msg.id === assistantMsgId ? { ...msg, text: accumulated } : msg
+                        msg.id === assistantMsgId
+                            ? { ...msg, text: (msg.text || "") + chunk }
+                            : msg
                     )));
                 },
                 onDone: () => {
