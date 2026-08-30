@@ -54,7 +54,14 @@ export function useAnchorActions({
                 payload: { sessionId: anchor.session_id, anchors: [] },
             });
             setSessionLabel("viewing old session");
-            if (anchor.anchor_page) pageJump.scrollToPage(anchor.anchor_page);
+            // Scroll to the anchor's exact position, not just the page top.
+            // pageJump.scrollToAnchor reads anchor.anchor_rect.y (normalized)
+            // and converts to a pixel offset within the page.
+            if (anchor.anchor_page && anchor.anchor_rect) {
+                pageJump.scrollToAnchor(anchor);
+            } else if (anchor.anchor_page) {
+                pageJump.scrollToPage(anchor.anchor_page);
+            }
         } catch (e) { console.error("[useAnchorActions] loadSessionForAnchor failed:", e); }
     }, [dispatch, setMessages, setSessionLabel, pageJump]);
 
