@@ -62,14 +62,13 @@ function Shell() {
         onBeforeLoad: () => { dispatch({ type: "PDF_CLEAR" }); clearDocumentState(); },
     });
     // displayScale = the zoom level the user actually sees (driven by zoomMode).
-    // sourceScale = the constant the bitmap is rasterized at. Each page is
-    // rendered once at sourceScale, then displayed at displayScale via CSS
-    // transform — so zoom changes are instant and zoom-in past sourceScale
-    // only re-renders if the user explicitly wants a sharper bitmap.
+    // The bitmap is rasterized at displayScale × renderDpr (default 1.5) so
+    // bitmap pixels are always >= display pixels — text stays sharp on HiDPI
+    // displays, no browser upscaling. Zoom changes invalidate the page cache
+    // and re-render at the new displayScale (handled in useVirtualPages).
     const displayScale = useFitWidthScale({ zoomMode, pdfDoc: loader.pdfDoc, scrollContainerRef });
-    const sourceScale = 2.0;
     const virtualPages = useVirtualPages({
-        pdfDoc: loader.pdfDoc, displayScale, sourceScale, scrollContainerRef,
+        pdfDoc: loader.pdfDoc, displayScale, scrollContainerRef,
         pageCount: pdfInfo?.page_count || 0,
         onStatusChange: ({ rendered }) => setRenderedPages(rendered),
     });
@@ -115,7 +114,7 @@ function Shell() {
                     <div className="reader-chat-grid" style={{ gridTemplateColumns: `1fr 6px ${chatWidth}px` }}>
                         <Reader
                             pdfInfo={pdfInfo} pdfDoc={loader.pdfDoc}
-                            displayScale={displayScale} sourceScale={sourceScale}
+                            displayScale={displayScale}
                             scrollContainerRef={scrollContainerRef}
                             pages={virtualPages.pages} setPageEntry={virtualPages.setPageEntry}
                             scheduleRender={virtualPages.scheduleRender}

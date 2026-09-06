@@ -10,7 +10,6 @@ export default function Reader({
     pdfInfo,
     pdfDoc,
     displayScale,
-    sourceScale,
     scrollContainerRef,
     pages,
     setPageEntry,
@@ -39,7 +38,6 @@ export default function Reader({
                             pageNum={p}
                             width={NATURAL_WIDTH_CSS}
                             displayScale={displayScale}
-                            sourceScale={sourceScale}
                             pageEntry={pages[p]}
                             setPageEntry={setPageEntry}
                             scheduleRender={scheduleRender}

@@ -6,15 +6,16 @@
  * --wrap-w CSS variables so the scroll container has the right
  * scrollHeight before the page actually renders.
  *
- * Render-once-and-scale strategy:
- *   The page bitmap is rendered once at a fixed sourceScale (a constant
- *   high-resolution value, e.g. 2.0). Zoom changes are applied via CSS
- *   `transform: scale(displayScale / sourceScale)` on the canvas, which
- *   is GPU-composited and free — no PDF.js re-render. Wrap dimensions
- *   (--wrap-w / --wrap-h) follow displayScale so the scrollbar stays
- *   correct. The overlay canvas is rendered at the displayScale size
- *   (not the sourceScale size) so drag rects and anchor highlights
- *   stay aligned with the visible page under any zoom level.
+ * Render strategy:
+ *   The page bitmap is rendered at displayScale × RENDER_DPR (matching
+ *   what useVirtualPages does), so bitmap pixels are ≥ display pixels
+ *   and the browser just copies them at native resolution — no upscale,
+ *   sharp text on HiDPI displays. Zoom changes invalidate the cache in
+ *   useVirtualPages and re-render at the new displayScale. Wrap
+ *   dimensions follow displayScale so the scrollbar positions correctly.
+ *   The overlay canvas matches the page canvas bitmap dimensions, so
+ *   drag rects and anchor highlights stay aligned with the visible page
+ *   under any zoom level.
  *
  * Performance notes:
  *  - Each wrap in the DOM keeps two canvases alive (page + overlay).
@@ -29,11 +30,18 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useDragSelection } from "../hooks/useDragSelection";
 
+// Multiplier applied to displayScale when rasterizing the page bitmap.
+// 1.5 is the sweet spot: text is sharp at any zoom (bitmap >= display
+// pixels), and a 1.5× upscale of a typical 800pt page is ~2 MB of
+// bitmap memory — acceptable for a virtualized 11-page cache. HiDPI
+// displays get extra sharpness; 1× displays still see bitmap pixels
+// at ≥ display resolution so the browser just copies them down.
+const RENDER_DPR = 1.5;
+
 export default function PageCanvas({
     pageNum,
     width,
     displayScale,
-    sourceScale,
     pageEntry,
     setPageEntry,
     scheduleRender,
@@ -62,22 +70,18 @@ export default function PageCanvas({
     }, [pageNum]);
 
     // `width` is the natural CSS width at scale=1.0 (612pt * 96/72 = 816 for Letter).
-    // `naturalH` is the same for the height (Letter is 792pt). The bitmap is
-    // rasterized at sourceScale (a constant — the highest quality we'll display).
-    // The visible canvas size = sourceSize * (displayScale / sourceScale) — i.e.
-    // when displayScale < sourceScale, the bitmap is downscaled by the browser
-    // (GPU-composited, free); when displayScale > sourceScale, the bitmap is
-    // upscaled (still GPU-composited, slight blur). Wrap dimensions follow
-    // displayScale so the scrollbar positions correctly.
+    // The bitmap is rasterized at displayScale × RENDER_DPR by useVirtualPages;
+    // PageCanvas just sizes its overlay to match. Wrap dimensions follow
+    // displayScale so the scrollbar positions correctly. Bitmap >= display,
+    // so the browser just copies pixels at native resolution — sharp text
+    // on HiDPI displays without the upscale blur of a fixed-source-scale render.
     const naturalH = width * (792 / 612);
-    const height = pageEntry?.viewport?.height ? pageEntry.viewport.height / sourceScale : naturalH;
     // Wrap dimensions (used for layout / scrollbar).
     const W = width * displayScale;
-    const H = height * displayScale;
-    // Canvas bitmap dimensions — rendered at sourceScale, displayed at the
-    // wrap's display size. The browser handles the scale factor.
-    const bitmapW = width * sourceScale;
-    const bitmapH = height * sourceScale;
+    const H = naturalH * displayScale;
+    // Canvas bitmap dimensions — overlay matches the page canvas bitmap.
+    const bitmapW = width * displayScale * RENDER_DPR;
+    const bitmapH = naturalH * displayScale * RENDER_DPR;
 
     // Resize the overlay canvas to match the PAGE canvas bitmap dimensions
     // (not the display dimensions). Overlay bitmap coords == page canvas
@@ -118,13 +122,13 @@ export default function PageCanvas({
             const r = a.anchor_rect;
             ctx.strokeStyle = a.role === "user" ? "rgba(210,153,34,0.85)" : "rgba(63,185,80,0.85)";
             ctx.fillStyle = a.role === "user" ? "rgba(210,153,34,0.10)" : "rgba(63,185,80,0.08)";
-            ctx.lineWidth = 1.5 * sourceScale;
-            ctx.setLineDash([6 * sourceScale, 3 * sourceScale]);
+            ctx.lineWidth = 1.5 * RENDER_DPR;
+            ctx.setLineDash([6 * RENDER_DPR, 3 * RENDER_DPR]);
             ctx.fillRect(r.x * bitmapW, r.y * bitmapH, r.w * bitmapW, r.h * bitmapH);
             ctx.strokeRect(r.x * bitmapW, r.y * bitmapH, r.w * bitmapW, r.h * bitmapH);
             ctx.setLineDash([]);
         }
-    }, [pageAnchors, bitmapW, bitmapH, sourceScale, pageEntry]);
+    }, [pageAnchors, bitmapW, bitmapH, RENDER_DPR, pageEntry]);
 
     // Live drag rectangle. Subscribe to drag changes — fires only when
     // the rect actually moves (no rAF polling, no per-render redraws).
@@ -138,22 +142,22 @@ export default function PageCanvas({
             if (rect) {
                 ctx.strokeStyle = "rgba(88,166,255,0.95)";
                 ctx.fillStyle = "rgba(88,166,255,0.18)";
-                ctx.lineWidth = 2 * sourceScale;
+                ctx.lineWidth = 2 * RENDER_DPR;
                 ctx.fillRect(rect.x * bitmapW, rect.y * bitmapH, rect.w * bitmapW, rect.h * bitmapH);
                 ctx.strokeRect(rect.x * bitmapW, rect.y * bitmapH, rect.w * bitmapW, rect.h * bitmapH);
             }
         });
         return unsubscribe;
-    }, [bitmapW, bitmapH, sourceScale, drag]);
+    }, [bitmapW, bitmapH, RENDER_DPR, drag]);
 
     const wrapStyle = {
         "--wrap-w": W + "px",
         "--wrap-h": H + "px",
     };
     // Canvas fills the wrap's display dimensions. The bitmap is rasterized
-    // at sourceScale (canvas.width/height = sourceW/H, set by _renderOne),
-    // but the CSS width/height is 100% of the wrap, so the bitmap is
-    // scaled to fit by the browser (GPU-accelerated, free). No CSS
+    // at displayScale × RENDER_DPR by _renderOne, but the CSS width/height
+    // is 100% of the wrap, so the browser copies the bitmap pixels to the
+    // display size (free, GPU-accelerated). No CSS
     // transform needed — that approach breaks layout because transform
     // doesn't affect the element's layout box.
     const canvasStyle = {
